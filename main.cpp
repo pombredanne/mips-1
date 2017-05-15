@@ -34,10 +34,10 @@ bool sorting_criterion(const pair<int, double> &a, const pair<int, double> &b) {
     return (a.second > b.second);
 }
 
-/* procedure clustering number_of_vectors vectors (each of them having vector_comp components) intro k clusters */
-/* assignments of vectors to clusters are written to assignments array */
-/* centroids' coordinates are written to centroids array */
-/* clusters are numbered from 0 to k-1 */
+// procedure clustering number_of_vectors vectors (each of them having vector_comp components) into k clusters
+// assignments of vectors to clusters are written to assignments array
+// centroids' coordinates are written to centroids array
+// clusters are numbered from 0 to k-1
 void k_means_clustering(double **vectors, int number_of_vectors,
 	   	int vector_comp, int k, int *assignments, double **centroids){
     double **sum_of_vectors = new double*[k];
@@ -72,9 +72,8 @@ void k_means_clustering(double **vectors, int number_of_vectors,
         }
         
         /* divide resulting vector by its length */
-        double vec_len;
         for (int i = 0; i < k; i++) {
-            vec_len = compute_vector_length(sum_of_vectors[i], vector_comp);
+            double vec_len = compute_vector_length(sum_of_vectors[i], vector_comp);
             
             /* probably think of something better to do with vectors of length zero */
             if (vec_len != 0)
@@ -86,14 +85,12 @@ void k_means_clustering(double **vectors, int number_of_vectors,
         
         /* assign vectors to new centroids */
         /* this is parallelizable */
-        int assignment;
-        double maximum = 0;
-        double result = 0;
-        bool maximum_initialized;
         for (int i = 0; i < number_of_vectors; i++) {
-            maximum_initialized = false;
+            bool maximum_initialized = false;
+            int assignment;
+            double maximum = 0;
             for (int j = 0; j < k; j++) {
-                result = dot_product(vectors[i], centroids[j], vector_comp);
+                double result = dot_product(vectors[i], centroids[j], vector_comp);
                 if (!maximum_initialized) {
                     maximum_initialized = true;
                     maximum = result;
@@ -129,25 +126,22 @@ struct layer_type {
     /* search array indicates if centroids assigned to this cluster should be chceked in the next layer */
 };
 
-layer_type* layer;
-int vector_components;
-int number_of_vectors;
-
-double** load_data(const char* filename){
+double** load_data(const char* filename, int* vector_components,
+	   	int* number_of_vectors){
     FILE *input;
     input = fopen(filename, "r");
     if (input == NULL) {
         printf("Couldn't open input file.\n");
         exit(EXIT_FAILURE);
     }
-    fscanf(input, "%d", &number_of_vectors);
-    fscanf(input, "%d", &vector_components);
-    double **vectors = new double*[number_of_vectors];
+    fscanf(input, "%d", number_of_vectors);
+    fscanf(input, "%d", vector_components);
+    double **vectors = new double*[*number_of_vectors];
     
     /* load vectors and find longest one */
-    for (int i = 0; i < number_of_vectors; i++) {
-        vectors[i] = new double[vector_components + m];
-        for (int j = 0; j < vector_components; j++) {
+    for (int i = 0; i < *number_of_vectors; i++) {
+        vectors[i] = new double[*vector_components + m];
+        for (int j = 0; j < *vector_components; j++) {
             fscanf(input, "%lf", &vectors[i][j]);
         }
 	}
@@ -157,7 +151,10 @@ double** load_data(const char* filename){
 
 int main(){
     //srand(time(NULL));
-	double** vectors = load_data("data/input");
+	int vector_components;
+	int number_of_vectors;
+
+	double** vectors = load_data("data/input", &vector_components, &number_of_vectors);
     double maximum_vector_length = 0;
     for (int i = 0; i < number_of_vectors; i++) {
         double vec_len = compute_vector_length(vectors[i], vector_components);
@@ -167,12 +164,10 @@ int main(){
     }
     
     /* append m components to loaded vectors */
-    double new_vector_length;
-    int power;
     for (int i = 0; i < number_of_vectors; i++){
         scale_vector(vectors[i], vector_components, maximum_vector_length);
-        new_vector_length = compute_vector_length(vectors[i], vector_components);
-        power = 2;
+        double new_vector_length = compute_vector_length(vectors[i], vector_components);
+        int power = 2;
         for (int j = vector_components; j < vector_components + m; j++) {
             vectors[i][j] = 0.5 - pow(new_vector_length, power);
             power *= 2;
@@ -180,7 +175,7 @@ int main(){
     }
     
     /* prepare search tree */
-    layer = new struct layer_type[layer_num];
+	layer_type* layer = new layer_type[layer_num];
     for (int lay = 0; lay < layer_num; lay++) {
         printf("\nlayer = %d\n", lay);
         
@@ -233,54 +228,32 @@ int main(){
     /* load queries */
     int number_of_queries;
     int vector_components_queries;
-    FILE *queries;
-    queries = fopen("data/queries", "r");
-    if (queries == NULL) {
-        printf("Couldn't open queries file.\n");
-        exit(EXIT_FAILURE);
-    }
-    fscanf(queries, "%d", &number_of_queries);
-    fscanf(queries, "%d", &vector_components_queries);
-    if (vector_components_queries != vector_components) {
-        printf("Queries have different dimensions than database entries.\n");
-        exit(EXIT_FAILURE);
-    }
-    double **query = new double*[number_of_queries];
+	double** query = load_data("data/queries", &vector_components_queries,
+			&number_of_queries);
     for (int i = 0; i < number_of_queries; i++) {
-        query[i] = new double[vector_components + m];
-        for (int j = 0; j < vector_components; j++) {
-            fscanf(queries, "%lf", &query[i][j]);
-        }
         /* append m additional zeros at the end of query */
         for(int j = vector_components; j < vector_components + m; j++) {
             query[i][j] = 0;
         }
     }
-    fclose(queries);
-    
-    double result = 0;
-    int best_result;
-    double maximum_result;
-    bool search = false;
-    bool maximum_initialized;
-    vector< std::pair<int, double> > best_centroids;
     
     for (int q = 0; q < number_of_queries; q++) {
     
         /* getting -1 as the best_result means that program failed */
-        best_result = -1;
-        maximum_result = -1;
+        int best_result = -1;
+        double maximum_result = -1;
         printf("\n--------------------------------------\n");
         printf("searching for query %d...\n", q);
         
         for (int lay = layer_num - 1; lay >= 0; lay--) {
+			vector< std::pair<int, double> > best_centroids;
             printf("\nlayer = %d\n", lay);
             for (int i = 0; i < layer[lay-1].cluster_num; i++) {
                 layer[lay-1].search[i] = false;
             }
-            maximum_initialized = false;
+            bool maximum_initialized = false;
             for (int i = 0; i < layer[lay].cluster_num; i++) {
-                search = false;
+                bool search = false;
                 /* in the first layer we check all centroids */
                 if (lay < layer_num - 1) {
                     /* we search only in the interesting centroids marked in layer above */
@@ -292,7 +265,7 @@ int main(){
                 /* this centroid is worth checking - find p highest inner products with query */
                 /* A_l = argmax_{i in C_l}^{(p)} q^T c_i^{(l)} */
                 if (lay == layer_num - 1 || search) {
-                    result = dot_product(query[q], layer[lay].centroids[i], vector_components + m);
+                    double result = dot_product(query[q], layer[lay].centroids[i], vector_components + m);
                     printf("centroid %d: result %f\n", i, result);
                     best_centroids.push_back(std::make_pair(i, result));
                 }
@@ -326,7 +299,7 @@ int main(){
                     for (unsigned j = 0; j < p && j < best_centroids.size(); j++) {
                         if (layer[lay].assignments[i] == best_centroids[j].first) {
                             /* this means that ith vector is in candidate set */
-                            result = dot_product(query[q], vectors[i], vector_components + m);
+                            double result = dot_product(query[q], vectors[i], vector_components + m);
                             if (!maximum_initialized) {
                                 maximum_initialized = true;
                                 maximum_result = result;
