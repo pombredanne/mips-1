@@ -259,6 +259,7 @@ int main(){
         for (int lay = layer_num - 1; lay >= 0; lay--) {
 			vector< std::pair<int, float> > best_centroids;
             printf("\nlayer = %d\n", lay);
+			// XXX: When lay==0, undefined behaviour.
             for (int i = 0; i < layer[lay-1].cluster_num; i++) {
                 layer[lay-1].search[i] = false;
             }
