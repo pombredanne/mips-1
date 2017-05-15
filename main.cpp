@@ -38,8 +38,8 @@ bool sorting_criterion(const pair<int, float> &a, const pair<int, float> &b) {
 // assignments of vectors to clusters are written to assignments array
 // centroids' coordinates are written to centroids array
 // clusters are numbered from 0 to k-1
-void k_means_clustering(float **vectors, int number_of_vectors,
-	   	int vector_comp, int k, int *assignments, float **centroids){
+void k_means_clustering(float* vectors, int number_of_vectors,
+	   	int vector_comp, int k, int *assignments, float *centroids){
     float **sum_of_vectors = new float*[k];
     for (int i = 0; i < k; i++) {
         sum_of_vectors[i] = new float[vector_comp];
@@ -67,7 +67,7 @@ void k_means_clustering(float **vectors, int number_of_vectors,
         /* compute sum of all vectors */
         for (int i = 0; i < number_of_vectors; i++) {
             for (int j = 0; j < vector_comp; j++) {
-                sum_of_vectors[assignments[i]][j] += vectors[i][j];
+                sum_of_vectors[assignments[i]][j] += vectors[i*vector_comp+j];
             }
         }
         
@@ -79,7 +79,7 @@ void k_means_clustering(float **vectors, int number_of_vectors,
             if (vec_len != 0)
                 scale_vector(sum_of_vectors[i], vector_comp, vec_len);
             for (int j = 0; j < vector_comp; j++) {
-                centroids[i][j] = sum_of_vectors[i][j];
+                centroids[i*vector_comp+j] = sum_of_vectors[i][j];
             }
         }
         
@@ -90,7 +90,7 @@ void k_means_clustering(float **vectors, int number_of_vectors,
             int assignment;
             float maximum = 0;
             for (int j = 0; j < k; j++) {
-                float result = dot_product(vectors[i], centroids[j], vector_comp);
+                float result = dot_product(vectors+i*vector_comp, centroids+j*vector_comp, vector_comp);
                 if (!maximum_initialized) {
                     maximum_initialized = true;
                     maximum = result;
@@ -116,7 +116,7 @@ const int m = 0;
 const int layer_num = 4;
 const int p = 3;
 
-float** load_data(const char* filename, int* vector_components,
+float* load_data(const char* filename, int* vector_components,
 	   	int* number_of_vectors){
     FILE *input;
     input = fopen(filename, "r");
@@ -126,13 +126,12 @@ float** load_data(const char* filename, int* vector_components,
     }
     fscanf(input, "%d", number_of_vectors);
     fscanf(input, "%d", vector_components);
-    float **vectors = new float*[*number_of_vectors];
+    float *vectors = new float[*number_of_vectors * (*vector_components+m)];
     
     /* load vectors and find longest one */
     for (int i = 0; i < *number_of_vectors; i++) {
-        vectors[i] = new float[*vector_components + m];
         for (int j = 0; j < *vector_components; j++) {
-            fscanf(input, "%f", &vectors[i][j]);
+            fscanf(input, "%f", &vectors[i*(*vector_components+m)+j]);
         }
 	}
     fclose(input);
@@ -141,17 +140,17 @@ float** load_data(const char* filename, int* vector_components,
 
 int vector_components;
 int number_of_vectors;
-float** vectors;
+float* vectors;
 
 int number_of_queries;
 int vector_components_queries;
-float** query;
+float* query;
 
 void transform_data(){
 	// Scale every vector so that maximum length is smaller than 1.
     float maximum_vector_length = 0;
     for (int i = 0; i < number_of_vectors; i++) {
-        float vec_len = compute_vector_length(vectors[i], vector_components);
+        float vec_len = compute_vector_length(vectors+i*(vector_components+m), vector_components);
         if (vec_len > maximum_vector_length) {
             maximum_vector_length = vec_len;
         }
@@ -159,11 +158,11 @@ void transform_data(){
     
     // Append m components to loaded vectors.
     for (int i = 0; i < number_of_vectors; i++){
-        scale_vector(vectors[i], vector_components, maximum_vector_length);
-        float new_vector_length = compute_vector_length(vectors[i], vector_components);
+        scale_vector(vectors+(vector_components+m)*i, vector_components, maximum_vector_length);
+        float new_vector_length = compute_vector_length(vectors+i*(vector_components+m), vector_components);
         int power = 2;
         for (int j = vector_components; j < vector_components + m; j++) {
-            vectors[i][j] = 0.5 - pow(new_vector_length, power);
+            vectors[i*(vector_components+m)+j] = 0.5 - pow(new_vector_length, power);
             power *= 2;
         }
     }
@@ -171,16 +170,15 @@ void transform_data(){
 
 void transform_queries(){
     for (int i = 0; i < number_of_queries; i++) {
-        /* append m additional zeros at the end of query */
         for(int j = vector_components; j < vector_components + m; j++) {
-            query[i][j] = 0;
+            query[i*(vector_components+m)+j] = 0;
         }
     }
 }
 
 struct layer_t {
     vector<int> assignments; // Centroid number to which ith vector is assigned.
-    float **centroids;
+    vector<float> centroids;
     int cluster_num;
     int cluster_size;
     bool *search;
@@ -191,11 +189,9 @@ int main(){
     //srand(time(NULL));
 	vectors = load_data("data/input", &vector_components, &number_of_vectors);
 	transform_data();
-    /* load queries */
 	query = load_data("data/queries", &vector_components_queries,
 			&number_of_queries);
 	transform_queries();
-    
     
     /* prepare search tree */
 	vector<layer_t> layer(layer_num);
@@ -221,28 +217,24 @@ int main(){
         }
         
         /* allocate centroids array */
-        layer[lay].centroids = new float*[layer[lay].cluster_num];
-        for (int i = 0; i < layer[lay].cluster_num; i++) {
-            layer[lay].centroids[i] = new float[vector_components + m];
-        }
+        layer[lay].centroids = vector<float>(layer[lay].cluster_num * (vector_components+m));
         layer[lay].search = new bool[layer[lay].cluster_num];
         
         /* do the clustering */
         printf("assignments of vectors to centroids:\n");
         if (lay == 0)
             k_means_clustering(vectors, number_of_vectors, vector_components + m, layer[lay].cluster_num,
-                               layer[lay].assignments.data(), layer[lay].centroids);
+                               layer[lay].assignments.data(), layer[lay].centroids.data());
         else 
-            k_means_clustering(layer[lay-1].centroids, layer[lay-1].cluster_num, vector_components + m,
-          
-                               layer[lay].cluster_num, layer[lay].assignments.data(), layer[lay].centroids);
+            k_means_clustering(layer[lay-1].centroids.data(), layer[lay-1].cluster_num, vector_components + m,
+                               layer[lay].cluster_num, layer[lay].assignments.data(), layer[lay].centroids.data());
                                
         /* print the centroids */
         printf("centroids' coordinates:\n");
         for (int i = 0; i < layer[lay].cluster_num; i++) {
             printf("%d: [ ", i);
             for (int j = 0; j < vector_components + m; j++) {
-                printf("%f ", layer[lay].centroids[i][j]);
+                printf("%f ", layer[lay].centroids[i*(vector_components+m)+j]);
             }
             printf("]\n");
         }
@@ -277,7 +269,7 @@ int main(){
                 /* this centroid is worth checking - find p highest inner products with query */
                 /* A_l = argmax_{i in C_l}^{(p)} q^T c_i^{(l)} */
                 if (lay == layer_num - 1 || search) {
-                    float result = dot_product(query[q], layer[lay].centroids[i], vector_components + m);
+                    float result = dot_product(query+q*(vector_components+m), layer[lay].centroids.data()+i*(vector_components+m), vector_components + m);
                     printf("centroid %d: result %f\n", i, result);
                     best_centroids.push_back(std::make_pair(i, result));
                 }
@@ -311,7 +303,7 @@ int main(){
                     for (unsigned j = 0; j < p && j < best_centroids.size(); j++) {
                         if (layer[lay].assignments[i] == best_centroids[j].first) {
                             /* this means that ith vector is in candidate set */
-                            float result = dot_product(query[q], vectors[i], vector_components + m);
+                            float result = dot_product(query+q*(vector_components+m), vectors+i*(vector_components+m), vector_components + m);
                             if (!maximum_initialized) {
                                 maximum_initialized = true;
                                 maximum_result = result;
@@ -332,19 +324,9 @@ int main(){
     }
     
     for (int lay = 0; lay < layer_num; lay++) {
-        for (int i = 0; i < layer[lay].cluster_num; i++) {
-            delete[] layer[lay].centroids[i];
-        }
-        delete[] layer[lay].centroids;
         delete[] layer[lay].search;
     }
-    for (int i = 0; i < number_of_vectors; i++) {
-        delete[] vectors[i];
-    }
     delete[] vectors;
-    for (int i = 0; i < number_of_queries; i++) {
-        delete[] query[i];
-    }
     delete[] query;
     return 0;
 }
