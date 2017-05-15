@@ -5,15 +5,13 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include "faiss/utils.h"
 
 using namespace std;
 
 float compute_vector_length(float *vec, int length) {
-    float sum_of_squares = 0;
-    for (int i = 0; i < length; i++) {
-        sum_of_squares += vec[i] * vec[i];
-    }
-    return sqrt(sum_of_squares);
+	float sqr = faiss::fvec_norm_L2sqr(vec, length);
+    return sqrt(sqr);
 }
 
 void scale_vector(float *vec, int length, float factor) {
@@ -116,7 +114,7 @@ const int m = 0;
 const int layer_num = 4;
 const int p = 3;
 
-float* load_data(const char* filename, int* vector_components,
+vector<float> load_data(const char* filename, int* vector_components,
 	   	int* number_of_vectors){
     FILE *input;
     input = fopen(filename, "r");
@@ -126,9 +124,8 @@ float* load_data(const char* filename, int* vector_components,
     }
     fscanf(input, "%d", number_of_vectors);
     fscanf(input, "%d", vector_components);
-    float *vectors = new float[*number_of_vectors * (*vector_components+m)];
+    vector<float> vectors(*number_of_vectors * (*vector_components+m));
     
-    /* load vectors and find longest one */
     for (int i = 0; i < *number_of_vectors; i++) {
         for (int j = 0; j < *vector_components; j++) {
             fscanf(input, "%f", &vectors[i*(*vector_components+m)+j]);
@@ -138,19 +135,30 @@ float* load_data(const char* filename, int* vector_components,
 	return vectors;
 }
 
+struct layer_t {
+    vector<int> assignments; // Centroid number to which ith vector is assigned.
+    vector<float> centroids;
+    int cluster_num;
+    int cluster_size;
+    vector<bool> search;
+    /* search array indicates if centroids assigned to this cluster should be checked in the next layer */
+};
+
+vector<layer_t> layer;
+
 int vector_components;
 int number_of_vectors;
-float* vectors;
+vector<float> vectors;
 
 int number_of_queries;
 int vector_components_queries;
-float* query;
+vector<float> query;
 
 void transform_data(){
 	// Scale every vector so that maximum length is smaller than 1.
     float maximum_vector_length = 0;
     for (int i = 0; i < number_of_vectors; i++) {
-        float vec_len = compute_vector_length(vectors+i*(vector_components+m), vector_components);
+        float vec_len = compute_vector_length(vectors.data()+i*(vector_components+m), vector_components);
         if (vec_len > maximum_vector_length) {
             maximum_vector_length = vec_len;
         }
@@ -158,8 +166,8 @@ void transform_data(){
     
     // Append m components to loaded vectors.
     for (int i = 0; i < number_of_vectors; i++){
-        scale_vector(vectors+(vector_components+m)*i, vector_components, maximum_vector_length);
-        float new_vector_length = compute_vector_length(vectors+i*(vector_components+m), vector_components);
+        scale_vector(vectors.data()+(vector_components+m)*i, vector_components, maximum_vector_length);
+        float new_vector_length = compute_vector_length(vectors.data()+i*(vector_components+m), vector_components);
         int power = 2;
         for (int j = vector_components; j < vector_components + m; j++) {
             vectors[i*(vector_components+m)+j] = 0.5 - pow(new_vector_length, power);
@@ -176,25 +184,8 @@ void transform_queries(){
     }
 }
 
-struct layer_t {
-    vector<int> assignments; // Centroid number to which ith vector is assigned.
-    vector<float> centroids;
-    int cluster_num;
-    int cluster_size;
-    bool *search;
-    /* search array indicates if centroids assigned to this cluster should be checked in the next layer */
-};
-
-int main(){
-    //srand(time(NULL));
-	vectors = load_data("data/input", &vector_components, &number_of_vectors);
-	transform_data();
-	query = load_data("data/queries", &vector_components_queries,
-			&number_of_queries);
-	transform_queries();
-    
-    /* prepare search tree */
-	vector<layer_t> layer(layer_num);
+void preprocess(){
+	layer.resize(layer_num);
     for (int lay = 0; lay < layer_num; lay++) {
         printf("\nlayer = %d\n", lay);
         
@@ -218,16 +209,18 @@ int main(){
         
         /* allocate centroids array */
         layer[lay].centroids = vector<float>(layer[lay].cluster_num * (vector_components+m));
-        layer[lay].search = new bool[layer[lay].cluster_num];
+        layer[lay].search.resize(layer[lay].cluster_num);
         
         /* do the clustering */
         printf("assignments of vectors to centroids:\n");
-        if (lay == 0)
-            k_means_clustering(vectors, number_of_vectors, vector_components + m, layer[lay].cluster_num,
+        if (lay == 0) {
+            k_means_clustering(vectors.data(), number_of_vectors, vector_components + m, layer[lay].cluster_num,
                                layer[lay].assignments.data(), layer[lay].centroids.data());
-        else 
+		}
+        else {
             k_means_clustering(layer[lay-1].centroids.data(), layer[lay-1].cluster_num, vector_components + m,
                                layer[lay].cluster_num, layer[lay].assignments.data(), layer[lay].centroids.data());
+		}
                                
         /* print the centroids */
         printf("centroids' coordinates:\n");
@@ -239,6 +232,17 @@ int main(){
             printf("]\n");
         }
     }
+}
+
+int main(){
+    //srand(time(NULL));
+	vectors = load_data("data/input", &vector_components, &number_of_vectors);
+	transform_data();
+	preprocess();
+
+	query = load_data("data/queries", &vector_components_queries,
+			&number_of_queries);
+	transform_queries();
     
     for (int q = 0; q < number_of_queries; q++) {
     
@@ -251,10 +255,12 @@ int main(){
         for (int lay = layer_num - 1; lay >= 0; lay--) {
 			vector< std::pair<int, float> > best_centroids;
             printf("\nlayer = %d\n", lay);
-			// XXX: When lay==0, undefined behaviour.
-            for (int i = 0; i < layer[lay-1].cluster_num; i++) {
-                layer[lay-1].search[i] = false;
-            }
+			// XXX: When lay==0, undefined behaviour. Quick-fixed.
+			if(lay!=0){
+				for (int i = 0; i < layer[lay-1].cluster_num; i++) {
+				    layer[lay-1].search[i] = false;
+				}
+			}
             bool maximum_initialized = false;
             for (int i = 0; i < layer[lay].cluster_num; i++) {
                 bool search = false;
@@ -269,7 +275,7 @@ int main(){
                 /* this centroid is worth checking - find p highest inner products with query */
                 /* A_l = argmax_{i in C_l}^{(p)} q^T c_i^{(l)} */
                 if (lay == layer_num - 1 || search) {
-                    float result = dot_product(query+q*(vector_components+m), layer[lay].centroids.data()+i*(vector_components+m), vector_components + m);
+                    float result = dot_product(query.data()+q*(vector_components+m), layer[lay].centroids.data()+i*(vector_components+m), vector_components + m);
                     printf("centroid %d: result %f\n", i, result);
                     best_centroids.push_back(std::make_pair(i, result));
                 }
@@ -303,7 +309,7 @@ int main(){
                     for (unsigned j = 0; j < p && j < best_centroids.size(); j++) {
                         if (layer[lay].assignments[i] == best_centroids[j].first) {
                             /* this means that ith vector is in candidate set */
-                            float result = dot_product(query+q*(vector_components+m), vectors+i*(vector_components+m), vector_components + m);
+                            float result = dot_product(query.data()+q*(vector_components+m), vectors.data()+i*(vector_components+m), vector_components + m);
                             if (!maximum_initialized) {
                                 maximum_initialized = true;
                                 maximum_result = result;
@@ -322,11 +328,4 @@ int main(){
         
         printf("\nbest result = %d with inner product = %f\n", best_result, maximum_result);
     }
-    
-    for (int lay = 0; lay < layer_num; lay++) {
-        delete[] layer[lay].search;
-    }
-    delete[] vectors;
-    delete[] query;
-    return 0;
 }
