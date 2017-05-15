@@ -1,10 +1,10 @@
-#include<cstdio>
-#include<cstdlib>
-#include<cmath>
-#include<ctime>
-#include<vector>
-#include<algorithm>
-#include<iostream>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <ctime>
+#include <vector>
+#include <algorithm>
+#include <iostream>
 
 using namespace std;
 
@@ -16,13 +16,13 @@ double compute_vector_length(double *vec, int length) {
     return sqrt(sum_of_squares);
 }
 
-void divide_vector_components(double *vec, int length, double factor) {
+void scale_vector(double *vec, int length, double factor) {
     for (int i = 0; i < length; i++){
         vec[i] /= factor;
     }
 }
 
-double multiply_vectors(double *vec1, double *vec2, int size) {
+double dot_product(double *vec1, double *vec2, int size) {
     double result = 0;
     for (int i = 0; i < size; i++) {
         result += vec1[i] * vec2[i];
@@ -38,7 +38,8 @@ bool sorting_criterion(const pair<int, double> &a, const pair<int, double> &b) {
 /* assignments of vectors to clusters are written to assignments array */
 /* centroids' coordinates are written to centroids array */
 /* clusters are numbered from 0 to k-1 */
-void k_means_clustering(double **vectors, int number_of_vectors, int vector_comp, int k, int *assignments, double **centroids){
+void k_means_clustering(double **vectors, int number_of_vectors,
+	   	int vector_comp, int k, int *assignments, double **centroids){
     double **sum_of_vectors = new double*[k];
     for (int i = 0; i < k; i++) {
         sum_of_vectors[i] = new double[vector_comp];
@@ -77,7 +78,7 @@ void k_means_clustering(double **vectors, int number_of_vectors, int vector_comp
             
             /* probably think of something better to do with vectors of length zero */
             if (vec_len != 0)
-                divide_vector_components(sum_of_vectors[i], vector_comp, vec_len);
+                scale_vector(sum_of_vectors[i], vector_comp, vec_len);
             for (int j = 0; j < vector_comp; j++) {
                 centroids[i][j] = sum_of_vectors[i][j];
             }
@@ -92,7 +93,7 @@ void k_means_clustering(double **vectors, int number_of_vectors, int vector_comp
         for (int i = 0; i < number_of_vectors; i++) {
             maximum_initialized = false;
             for (int j = 0; j < k; j++) {
-                result = multiply_vectors(vectors[i], centroids[j], vector_comp);
+                result = dot_product(vectors[i], centroids[j], vector_comp);
                 if (!maximum_initialized) {
                     maximum_initialized = true;
                     maximum = result;
@@ -126,21 +127,19 @@ struct layer_type {
     int cluster_size;
     bool *search;
     /* search array indicates if centroids assigned to this cluster should be chceked in the next layer */
-} *layer;
+};
 
-int main(){
-    srand(time(NULL));
-    double vec_len;
-    double maximum_vector_length = 0;
-    /* open input file and load data */
+layer_type* layer;
+int vector_components;
+int number_of_vectors;
+
+double** load_data(const char* filename){
     FILE *input;
-    input = fopen("data/input", "r");
+    input = fopen(filename, "r");
     if (input == NULL) {
         printf("Couldn't open input file.\n");
         exit(EXIT_FAILURE);
     }
-    int vector_components;
-    int number_of_vectors;
     fscanf(input, "%d", &number_of_vectors);
     fscanf(input, "%d", &vector_components);
     double **vectors = new double*[number_of_vectors];
@@ -151,18 +150,27 @@ int main(){
         for (int j = 0; j < vector_components; j++) {
             fscanf(input, "%lf", &vectors[i][j]);
         }
-        vec_len = compute_vector_length(vectors[i], vector_components);
+	}
+    fclose(input);
+	return vectors;
+}
+
+int main(){
+    //srand(time(NULL));
+	double** vectors = load_data("data/input");
+    double maximum_vector_length = 0;
+    for (int i = 0; i < number_of_vectors; i++) {
+        double vec_len = compute_vector_length(vectors[i], vector_components);
         if (vec_len > maximum_vector_length) {
             maximum_vector_length = vec_len;
         }
     }
-    fclose(input);
     
     /* append m components to loaded vectors */
     double new_vector_length;
     int power;
     for (int i = 0; i < number_of_vectors; i++){
-        divide_vector_components(vectors[i], vector_components, maximum_vector_length);
+        scale_vector(vectors[i], vector_components, maximum_vector_length);
         new_vector_length = compute_vector_length(vectors[i], vector_components);
         power = 2;
         for (int j = vector_components; j < vector_components + m; j++) {
@@ -284,7 +292,7 @@ int main(){
                 /* this centroid is worth checking - find p highest inner products with query */
                 /* A_l = argmax_{i in C_l}^{(p)} q^T c_i^{(l)} */
                 if (lay == layer_num - 1 || search) {
-                    result = multiply_vectors(query[q], layer[lay].centroids[i], vector_components + m);
+                    result = dot_product(query[q], layer[lay].centroids[i], vector_components + m);
                     printf("centroid %d: result %f\n", i, result);
                     best_centroids.push_back(std::make_pair(i, result));
                 }
@@ -318,7 +326,7 @@ int main(){
                     for (unsigned j = 0; j < p && j < best_centroids.size(); j++) {
                         if (layer[lay].assignments[i] == best_centroids[j].first) {
                             /* this means that ith vector is in candidate set */
-                            result = multiply_vectors(query[q], vectors[i], vector_components + m);
+                            result = dot_product(query[q], vectors[i], vector_components + m);
                             if (!maximum_initialized) {
                                 maximum_initialized = true;
                                 maximum_result = result;
