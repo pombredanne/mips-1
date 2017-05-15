@@ -116,16 +116,6 @@ const int m = 0;
 const int layer_num = 4;
 const int p = 3;
 
-struct layer_type {
-    int *assignments;
-    /* assignments[i] == j means that vector i is assigned to centroid j */
-    float **centroids;
-    int cluster_num;
-    int cluster_size;
-    bool *search;
-    /* search array indicates if centroids assigned to this cluster should be chceked in the next layer */
-};
-
 float** load_data(const char* filename, int* vector_components,
 	   	int* number_of_vectors){
     FILE *input;
@@ -149,12 +139,16 @@ float** load_data(const char* filename, int* vector_components,
 	return vectors;
 }
 
-int main(){
-    //srand(time(NULL));
-	int vector_components;
-	int number_of_vectors;
+int vector_components;
+int number_of_vectors;
+float** vectors;
 
-	float** vectors = load_data("data/input", &vector_components, &number_of_vectors);
+int number_of_queries;
+int vector_components_queries;
+float** query;
+
+void transform_data(){
+	// Scale every vector so that maximum length is smaller than 1.
     float maximum_vector_length = 0;
     for (int i = 0; i < number_of_vectors; i++) {
         float vec_len = compute_vector_length(vectors[i], vector_components);
@@ -163,7 +157,7 @@ int main(){
         }
     }
     
-    /* append m components to loaded vectors */
+    // Append m components to loaded vectors.
     for (int i = 0; i < number_of_vectors; i++){
         scale_vector(vectors[i], vector_components, maximum_vector_length);
         float new_vector_length = compute_vector_length(vectors[i], vector_components);
@@ -173,9 +167,38 @@ int main(){
             power *= 2;
         }
     }
+}
+
+void transform_queries(){
+    for (int i = 0; i < number_of_queries; i++) {
+        /* append m additional zeros at the end of query */
+        for(int j = vector_components; j < vector_components + m; j++) {
+            query[i][j] = 0;
+        }
+    }
+}
+
+struct layer_t {
+    vector<int> assignments; // Centroid number to which ith vector is assigned.
+    float **centroids;
+    int cluster_num;
+    int cluster_size;
+    bool *search;
+    /* search array indicates if centroids assigned to this cluster should be checked in the next layer */
+};
+
+int main(){
+    //srand(time(NULL));
+	vectors = load_data("data/input", &vector_components, &number_of_vectors);
+	transform_data();
+    /* load queries */
+	query = load_data("data/queries", &vector_components_queries,
+			&number_of_queries);
+	transform_queries();
+    
     
     /* prepare search tree */
-	layer_type* layer = new layer_type[layer_num];
+	vector<layer_t> layer(layer_num);
     for (int lay = 0; lay < layer_num; lay++) {
         printf("\nlayer = %d\n", lay);
         
@@ -186,12 +209,12 @@ int main(){
         
         /* allocate assignments array */
         if (lay == 0) {
-            layer[lay].assignments = new int[number_of_vectors];
+            layer[lay].assignments = vector<int>(number_of_vectors);
             for (int i = 0; i < number_of_vectors; i++) {
                 layer[lay].assignments[i] = rand() % layer[lay].cluster_num;
             }
         } else {
-            layer[lay].assignments = new int[layer[lay-1].cluster_num];
+            layer[lay].assignments = vector<int>(layer[lay-1].cluster_num);
             for (int i = 0; i < layer[lay-1].cluster_num; i++) {
                 layer[lay].assignments[i] = rand() % layer[lay].cluster_num;
             }
@@ -208,11 +231,11 @@ int main(){
         printf("assignments of vectors to centroids:\n");
         if (lay == 0)
             k_means_clustering(vectors, number_of_vectors, vector_components + m, layer[lay].cluster_num,
-                               layer[lay].assignments, layer[lay].centroids);
+                               layer[lay].assignments.data(), layer[lay].centroids);
         else 
             k_means_clustering(layer[lay-1].centroids, layer[lay-1].cluster_num, vector_components + m,
           
-                               layer[lay].cluster_num, layer[lay].assignments, layer[lay].centroids);
+                               layer[lay].cluster_num, layer[lay].assignments.data(), layer[lay].centroids);
                                
         /* print the centroids */
         printf("centroids' coordinates:\n");
@@ -222,18 +245,6 @@ int main(){
                 printf("%f ", layer[lay].centroids[i][j]);
             }
             printf("]\n");
-        }
-    }
-    
-    /* load queries */
-    int number_of_queries;
-    int vector_components_queries;
-	float** query = load_data("data/queries", &vector_components_queries,
-			&number_of_queries);
-    for (int i = 0; i < number_of_queries; i++) {
-        /* append m additional zeros at the end of query */
-        for(int j = vector_components; j < vector_components + m; j++) {
-            query[i][j] = 0;
         }
     }
     
@@ -320,14 +331,12 @@ int main(){
     }
     
     for (int lay = 0; lay < layer_num; lay++) {
-        delete[] layer[lay].assignments;
         for (int i = 0; i < layer[lay].cluster_num; i++) {
             delete[] layer[lay].centroids[i];
         }
         delete[] layer[lay].centroids;
         delete[] layer[lay].search;
     }
-    delete[] layer;
     for (int i = 0; i < number_of_vectors; i++) {
         delete[] vectors[i];
     }
