@@ -21,27 +21,24 @@ void scale_vector(float *vec, int length, float factor) {
 }
 
 float dot_product(float *vec1, float *vec2, int size) {
-    float result = 0;
-    for (int i = 0; i < size; i++) {
-        result += vec1[i] * vec2[i];
-    }
-    return result;
+	return faiss::fvec_inner_product(vec1, vec2, size);
 }
 
 bool sorting_criterion(const pair<int, float> &a, const pair<int, float> &b) {
     return (a.second > b.second);
 }
 
-// procedure clustering number_of_vectors vectors (each of them having vector_comp components) into k clusters
-// assignments of vectors to clusters are written to assignments array
-// centroids' coordinates are written to centroids array
-// clusters are numbered from 0 to k-1
+// Procedure clustering number_of_vectors vectors (each of them having dim components) into k clusters.
+// Assignments of vectors to clusters are written to assignments array.
+// Centroids' coordinates are written to centroids array.
+// Clusters are numbered from 0 to k-1.
+// TODO: Change to kmeans_clustering from faiss.
 void k_means_clustering(float* vectors, int number_of_vectors,
-	   	int vector_comp, int k, int *assignments, float *centroids){
+	   	int dim, int k, int *assignments, float *centroids){
     float **sum_of_vectors = new float*[k];
     for (int i = 0; i < k; i++) {
-        sum_of_vectors[i] = new float[vector_comp];
-        for (int j = 0; j < vector_comp; j++) {
+        sum_of_vectors[i] = new float[dim];
+        for (int j = 0; j < dim; j++) {
             sum_of_vectors[i][j] = 0;
         }
     }
@@ -50,12 +47,11 @@ void k_means_clustering(float* vectors, int number_of_vectors,
     while(assignments_changed) {
         assignments_changed = false;
         for (int i = 0; i < k; i++) {
-            for (int j = 0; j < vector_comp; j++) {
+            for (int j = 0; j < dim; j++) {
                 sum_of_vectors[i][j] = 0;
             }
         }
 
-        /* print assignments */
         printf("iter %d: ", iter);
         for (int i = 0; i < number_of_vectors; i++) {
             printf("%d ", assignments[i]);
@@ -64,20 +60,20 @@ void k_means_clustering(float* vectors, int number_of_vectors,
         
         /* compute sum of all vectors */
         for (int i = 0; i < number_of_vectors; i++) {
-            for (int j = 0; j < vector_comp; j++) {
-                sum_of_vectors[assignments[i]][j] += vectors[i*vector_comp+j];
+            for (int j = 0; j < dim; j++) {
+                sum_of_vectors[assignments[i]][j] += vectors[i*dim+j];
             }
         }
         
         /* divide resulting vector by its length */
         for (int i = 0; i < k; i++) {
-            float vec_len = compute_vector_length(sum_of_vectors[i], vector_comp);
+            float vec_len = compute_vector_length(sum_of_vectors[i], dim);
             
             /* probably think of something better to do with vectors of length zero */
             if (vec_len != 0)
-                scale_vector(sum_of_vectors[i], vector_comp, vec_len);
-            for (int j = 0; j < vector_comp; j++) {
-                centroids[i*vector_comp+j] = sum_of_vectors[i][j];
+                scale_vector(sum_of_vectors[i], dim, vec_len);
+            for (int j = 0; j < dim; j++) {
+                centroids[i*dim+j] = sum_of_vectors[i][j];
             }
         }
         
@@ -88,7 +84,7 @@ void k_means_clustering(float* vectors, int number_of_vectors,
             int assignment;
             float maximum = 0;
             for (int j = 0; j < k; j++) {
-                float result = dot_product(vectors+i*vector_comp, centroids+j*vector_comp, vector_comp);
+                float result = dot_product(vectors+i*dim, centroids+j*dim, dim);
                 if (!maximum_initialized) {
                     maximum_initialized = true;
                     maximum = result;
@@ -111,8 +107,8 @@ void k_means_clustering(float* vectors, int number_of_vectors,
 }
 
 const int m = 0;
-const int layer_num = 4;
-const int p = 3;
+const int L = 4; // Number of layers.
+const int P = 3; // Number of checked best centroids.
 
 vector<float> load_data(const char* filename, int* dim,
 	   	int* number_of_vectors){
@@ -141,8 +137,6 @@ struct layer_t {
     vector<float> centroids;
     int cluster_num;
     int cluster_size;
-    vector<bool> search;
-    /* search array indicates if centroids assigned to this cluster should be checked in the next layer */
 };
 
 vector<layer_t> layers;
@@ -185,12 +179,12 @@ void transform_queries(){
 }
 
 void preprocess(){
-	layers.resize(layer_num);
-    for (int lay = 0; lay < layer_num; lay++) {
+	layers.resize(L);
+    for (int lay = 0; lay < L; lay++) {
         printf("\nlayer = %d\n", lay);
         
         // Compute number of clusters and cluster size on this layer.
-        layers[lay].cluster_size = floor(pow(number_of_vectors, (float)(lay+1)/(float)layer_num));
+        layers[lay].cluster_size = floor(pow(number_of_vectors, (float)(lay+1)/(float)L));
         layers[lay].cluster_num = floor((float)number_of_vectors/(float)layers[lay].cluster_size);
         printf("cluster_num = %d\n", layers[lay].cluster_num);
         
@@ -204,7 +198,6 @@ void preprocess(){
 		}
         
         layers[lay].centroids = vector<float>(layers[lay].cluster_num * dim);
-        layers[lay].search.resize(layers[lay].cluster_num);
         
 		// Cluster.
         printf("assignments of vectors to centroids:\n");
@@ -223,83 +216,68 @@ void preprocess(){
 }
 
 void answer_query(float* query_vector){ 
-	/* getting -1 as the best_result means that program failed */
-	int best_result = -1;
-	float maximum_result = -1;
-	
-	for (int lay = layer_num - 1; lay >= 0; lay--) {
-		vector< std::pair<int, float> > best_centroids;
+	vector<int> candidates(layers[L-1].cluster_num);
+	for(size_t i=0; i<candidates.size(); i++){
+		candidates[i]=i;
+	}
+	for (int lay = L - 1; lay >= 0; lay--) {
 		printf("\nlayer = %d\n", lay);
-		// XXX: When lay==0, undefined behaviour. Quick-fixed.
-		if(lay!=0){
-			for (int i = 0; i < layers[lay-1].cluster_num; i++) {
-				layers[lay-1].search[i] = false;
-			}
-		}
-		for (int i = 0; i < layers[lay].cluster_num; i++) {
-			bool search = false;
-			/* in the first layer we check all centroids */
-			if (lay < layer_num - 1) {
-				/* we search only in the interesting centroids marked in layer above */
-				if (layers[lay].search[i]) {
-					search = true;
-				}
-			}
-			
-			/* this centroid is worth checking - find p highest inner products with query */
-			/* A_l = argmax_{i in C_l}^{(p)} q^T c_i^{(l)} */
-			if (lay == layer_num - 1 || search) {
-				float result = dot_product(query_vector, layers[lay].centroids.data()+i*dim, dim);
-				printf("centroid %d: result %f\n", i, result);
-				best_centroids.push_back(std::make_pair(i, result));
-			}
+		vector< std::pair<int, float> > best_centroids;
+		for(size_t i=0; i<candidates.size(); i++){
+			int c=candidates[i];
+			// This centroid is worth checking - find P highest inner products with query.
+			float result = dot_product(query_vector, layers[lay].centroids.data()+c*dim, dim);
+			printf("centroid %d: result %f\n", c, result);
+			best_centroids.push_back(std::make_pair(c, result));
 		}
 		
 		sort(best_centroids.begin(), best_centroids.end(), sorting_criterion);
 		printf("best_centroids:\n");
-		for (unsigned i = 0; i < best_centroids.size() && i < p; i++) {
+		for (unsigned i = 0; i < best_centroids.size() && i < P; i++) {
 			cout << best_centroids[i].first << " " << best_centroids[i].second << endl;
 		}
 		
 		if (lay > 0) {
-			/* mark centroids to be checked at next layer */
-			/* C_{l+1} = {i|a_i^{(l+1)} in A_l} */
 			printf("next layer centroids: ");
-			for (int i = 0; i < layers[lay-1].cluster_num; i++) {
-				for (unsigned j = 0; j < p && j < best_centroids.size(); j++) {
-					if (layers[lay].assignments[i] == best_centroids[j].first) {
-						layers[lay-1].search[i] = true;
-						printf("%d ", i);
-						break;
-					}
-				}
-			}
-			printf("\n");
-		} else {
-			/* we are at the last layer - print candidate set and find best */
-			bool maximum_initialized = false;
+		}
+		else{
 			printf("candidate set (CL): ");
-			for (int i = 0; i < number_of_vectors; i++) {
-				for (unsigned j = 0; j < p && j < best_centroids.size(); j++) {
-					if (layers[lay].assignments[i] == best_centroids[j].first) {
-						/* this means that ith vector is in candidate set */
-						float result = dot_product(query_vector, vectors.data()+i*dim, dim);
-						if (!maximum_initialized) {
-							maximum_initialized = true;
-							maximum_result = result;
-							best_result = i;
-						} else if (result > maximum_result) {
-							maximum_result = result;
-							best_result = i;
-						}
-						printf("%d ", i);
-					}
+		}
+
+		int num_points = (lay==0) ? number_of_vectors : layers[lay-1].cluster_num;
+		candidates.clear();
+		// Mark centroids to be checked at next layer.
+		for (int i = 0; i < num_points; i++) {
+			for (unsigned j = 0; j < P && j < best_centroids.size(); j++) {
+				if (layers[lay].assignments[i] == best_centroids[j].first) {
+					candidates.push_back(i);
+					printf("%d ", i);
+					break;
 				}
 			}
 		}
+		printf("\n");
+		if (lay==0) {
+			// Last layer - find best match.
+			int best_result = -1;
+			float maximum_result = -1;
+			bool maximum_initialized = false;
+			for(size_t i=0; i<candidates.size(); i++){
+				int c=candidates[i];
+				float result = dot_product(query_vector, vectors.data()+c*dim, dim);
+				if (!maximum_initialized) {
+					maximum_initialized = true;
+					maximum_result = result;
+					best_result = c;
+				} else if (result > maximum_result) {
+					maximum_result = result;
+					best_result = c;
+				}
+			}
+			printf("best result = %d with inner product = %f\n", best_result, maximum_result);
+		}
 		best_centroids.clear();
 	}
-	printf("\nbest result = %d with inner product = %f\n", best_result, maximum_result);
 }
 
 int main(){
