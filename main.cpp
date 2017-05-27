@@ -16,12 +16,11 @@ using namespace std;
 #define LOG(msg, ...) if(VERBOSE) { printf("\n" msg "\n", ##__VA_ARGS__); }
 bool VERBOSE = true;
 
-typedef struct layer_t_ {
-   vector<size_t>   assignments; // Centroid number to which ith vector is assigned.
+struct layer_t {
+   vector<size_t> assignments; // Centroid number to which ith vector is assigned.
    vector<float> centroids;
    size_t cluster_num;
-   size_t cluster_size;
-} layer_t;
+};
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Utilities
@@ -42,15 +41,19 @@ vector<float> load_data(const char *filename, size_t& d, size_t& n, size_t m) {
 	   printf("Bad input file format.");
 	   exit(EXIT_FAILURE);
    }
+   d += m; // Extending here.
 
-   vector<float> vectors(n * (d+m));
+   vector<float> vectors(n * d);
    for (size_t i = 0; i < n; i++) {
-      for (size_t j = 0; j < d; j++) {
-         if(!fscanf(input, "%f", &vectors[j + (i*d)])){
+      for (size_t j = 0; j < d - m; j++) {
+         if(!fscanf(input, "%f", &vectors[j + (i * d)])){
 			printf("Bad input file format.");
 			exit(EXIT_FAILURE);
 		 }
       }
+	  for (size_t j = d - m; j < d; j++){
+		  vectors[j + (i * d)] = 0.0;
+	  }
    }
    fclose(input);
 
@@ -61,7 +64,7 @@ inline bool comp(const pair<size_t, float> &a, const pair<size_t, float> &b) {
    return (a.second > b.second);
 }
 
-void print_centroids(layer_t_& layer, size_t d) {
+void print_centroids(layer_t &layer, size_t d) {
    printf("centroids' coordinates:\n");
    for (size_t i = 0; i < layer.cluster_num; i++) {
       printf("%zu: [ ", i);
@@ -101,10 +104,9 @@ inline void scale_(float* vec, float alpha, size_t size) {
 
 void normalize_(vector<float>& vectors, size_t n, size_t d) {
    float max_norm = 0;
-   float norm;
 
    for (size_t i = 0; i < n; i++) {
-      norm = fvec_norm_L2(vectors.data() + (i * d), d);
+      float norm = fvec_norm_L2(vectors.data() + (i * d), d);
       max_norm = norm > max_norm ? norm : max_norm;
    }
 
@@ -117,10 +119,10 @@ void expand_(vector<float>& vectors, size_t n, size_t d, size_t m) {
    float power = 2.f;
 
    for (size_t i = 0; i < n; i++) {
-      float norm = fvec_norm_L2(vectors.data() + (i*d), d);
+      float norm = fvec_norm_L2(vectors.data() + (i * d), d);
 
-      for (size_t j = d; j < d + m; j++) {
-         vectors[i * d + j] = (float) (0.5 - pow(norm, power));
+      for (size_t j = d - m; j < d; j++) {
+         vectors[i * d + j] = 0.5 - pow(norm, power);
          power *= 2;
       }
    }
@@ -128,8 +130,8 @@ void expand_(vector<float>& vectors, size_t n, size_t d, size_t m) {
 
 void expand_queries_(vector<float> &queries, size_t n, size_t d, size_t m) {
    for (size_t i = 0; i < n; i++) {
-      for (size_t j = d-m; j < d; j++) {
-         queries[j + (i*d)] = 0.f;
+      for (size_t j = d - m; j < d; j++) {
+         queries[i * d + j] = 0.f;
       }
    }
 }
@@ -153,8 +155,16 @@ void assign_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, 
 }
 
 void k_means_clustering_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
-   faiss::kmeans_clustering((size_t) d, (size_t) n, (size_t) k, vectors, centroids);
+   faiss::kmeans_clustering(d, n, k, vectors, centroids);
    assign_(vectors, n, d, k, assignments, centroids);
+	LOG("Clustering %zu points into %zu centroids", n, k);
+	for(size_t i = 0; i < n; i++){
+		printf("Point %zu: [", i);
+		for(size_t j = 0; j < d; j++){
+			printf("%f%s", vectors[i*d+j], j==d-1 ? "": ", ");
+		}
+		printf("] - clu %zu\n", assignments[i]);
+	}
 }
 
 vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
@@ -164,23 +174,19 @@ vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
       LOG("layer = %zu", layer_id);
 
       // Compute number of clusters and cluster size on this layer.
-      layers[layer_id].cluster_size = (size_t) floor(pow(n, (float) (layer_id + 1) / (float) L));
-      layers[layer_id].cluster_num  = (size_t) floor((float) n / (float) layers[layer_id].cluster_size);
+      size_t cluster_size = (size_t) floor(pow(n, (float) (layer_id + 1) / (float) (L+1)));
+      layers[layer_id].cluster_num = (size_t) floor((float) n / (float) cluster_size);
 
-      LOG("cluster_num = %zu\n", layers[layer_id].cluster_num);
+      LOG("cluster_num = %zu", layers[layer_id].cluster_num);
 
       size_t n_points = (layer_id == 0) ? n : layers[layer_id - 1].cluster_num;
       float *points = (layer_id == 0) ? vectors.data() : layers[layer_id - 1].centroids.data();
 
-      // Initial assignments are random.
       layers[layer_id].assignments = vector<size_t>(n_points);
-      for (size_t i = 0; i < n_points; i++) {
-         layers[layer_id].assignments[i] = rand() % layers[layer_id].cluster_num;
-      }
-      layers[layer_id].centroids = vector<float>((size_t) (layers[layer_id].cluster_num * d));
+      layers[layer_id].centroids = vector<float>(layers[layer_id].cluster_num * d);
 
       // Cluster.
-      LOG("assignments of vectors to centroids:\n");
+      LOG("assignments of vectors to centroids:");
       k_means_clustering_(points, n_points, d, layers[layer_id].cluster_num,
                           layers[layer_id].assignments.data(), layers[layer_id].centroids.data());
 
@@ -209,7 +215,7 @@ void predict(float *query_vector, vector<layer_t>& layers, vector<float>& vector
       // Multiply previously marked centroids with the query.
       for (size_t i = 0; i < candidates.size(); i++) {
          size_t c = candidates[i];
-         float result = faiss::fvec_inner_product(query_vector, layers[layer_id].centroids.data() + c * d, (size_t) d);
+         float result = faiss::fvec_inner_product(query_vector, layers[layer_id].centroids.data() + c * d, d);
          best_centroids.push_back(std::make_pair(c, result));
 
          LOG("centroid %zu: result %f", c, result);
@@ -233,6 +239,7 @@ void predict(float *query_vector, vector<layer_t>& layers, vector<float>& vector
          }
       }
       size_t num_points = (layer_id == 0) ? n : layers[layer_id - 1].cluster_num;
+	  LOG("np: %zu", num_points);
       candidates.clear();
       // Mark centroids to be checked at next layer.
       for (size_t i = 0; i < num_points; i++) {
@@ -244,34 +251,31 @@ void predict(float *query_vector, vector<layer_t>& layers, vector<float>& vector
             }
          }
       }
-      LOG("\n");
 
-      if (layer_id == 0) {
-         // Last layer - find best match.
-         size_t best_result = -1;
-         float maximum_result = -1;
-         bool maximum_initialized = false;
-         for (size_t i = 0; i < candidates.size(); i++) {
-            size_t c = candidates[i];
-            float result = faiss::fvec_inner_product(query_vector, vectors.data() + c * d, d);
-            if (!maximum_initialized) {
-               maximum_initialized = true;
-               maximum_result = result;
-               best_result = c;
-            } else if (result > maximum_result) {
-               maximum_result = result;
-               best_result = c;
-            }
-         }
-         printf("best result = %zu : [", best_result);
-         for (size_t i = 0; i < d; i++) {
-            // Printing vector before transformations, to see the one after transformations use 'vectors'.
-            printf("%f ", *(vectors_copy.data() + best_result * d + i));
-         }
-         printf("] inner product = %f", maximum_result);
-      }
       best_centroids.clear();
    }
+	 // Last layer - find best match.
+	 size_t best_result = -1;
+	 float maximum_result = -1;
+	 bool maximum_initialized = false;
+	 for (size_t i = 0; i < candidates.size(); i++) {
+		size_t c = candidates[i];
+		float result = faiss::fvec_inner_product(query_vector, vectors.data() + c * d, d);
+		if (!maximum_initialized) {
+		   maximum_initialized = true;
+		   maximum_result = result;
+		   best_result = c;
+		} else if (result > maximum_result) {
+		   maximum_result = result;
+		   best_result = c;
+		}
+	 }
+	 printf("best result = %zu : [", best_result);
+	 for (size_t i = 0; i < d; i++) {
+		// Printing vector before transformations, to see the one after transformations use 'vectors'.
+		printf("%f ", *(vectors_copy.data() + best_result * d + i));
+	 }
+	 printf("] inner product = %f", maximum_result);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -301,7 +305,7 @@ int main(int argc, char* argv[]) {
 	normalize_(vectors, n, d);
 	expand_(vectors, n, d, m);
 
-	vector<layer_t> layers = train(vectors, n, d+m, L);
+	vector<layer_t> layers = train(vectors, n, d, L);
 
 	queries = load_data(query_file, dq, nq, m);
 	expand_queries_(queries, nq, dq, m);
