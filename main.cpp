@@ -116,14 +116,11 @@ void normalize_(vector<float>& vectors, size_t n, size_t d) {
 }
 
 void expand_(vector<float>& vectors, size_t n, size_t d, size_t m) {
-    float power = 2.f;
-
     for (size_t i = 0; i < n; i++) {
         float norm = fvec_norm_L2(vectors.data() + (i * d), d);
-
         for (size_t j = d - m; j < d; j++) {
-            vectors[i * d + j] = 0.5 - pow(norm, power);
-            power *= 2;
+            norm *= norm;
+            vectors[i * d + j] = 0.5 - norm;
         }
     }
 }
@@ -156,14 +153,29 @@ void assign_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, 
 
 void k_means_clustering_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
     faiss::kmeans_clustering(d, n, k, vectors, centroids);
+    for(size_t i = 0; i < k; i++){
+        LOG("Cluster %zu [", i);
+        for(size_t j = 0; j < d; j++){
+            printf("%f ", centroids[d*i+j]);
+        }
+    }
     assign_(vectors, n, d, k, assignments, centroids);
     LOG("Clustering %zu points into %zu centroids", n, k);
     for(size_t i = 0; i < n; i++){
-        printf("Point %zu: [", i);
+        /*
+        printf("The point %zu was [", i);
         for(size_t j = 0; j < d; j++){
-            printf("%f%s", vectors[i*d+j], j==d-1 ? "": ", ");
+            printf("%f ", vectors[d*i+j]);
         }
-        printf("] - clu %zu\n", assignments[i]);
+        printf("]");
+        */
+        LOG("  it got assigned to centroid %zu [", assignments[i]);
+        /*
+        for(size_t j = 0; j < d; j++){
+            printf("%f ", centroids[d*assignments[i]+j]);
+        }
+        printf("]\n\n");
+        */
     }
 }
 
@@ -186,7 +198,6 @@ vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
         layers[layer_id].centroids = vector<float>(layers[layer_id].cluster_num * d);
 
         // Cluster.
-        LOG("assignments of vectors to centroids:");
         k_means_clustering_(points, n_points, d, layers[layer_id].cluster_num,
                 layers[layer_id].assignments.data(), layers[layer_id].centroids.data());
 
@@ -197,7 +208,7 @@ vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
     return layers;
 }
 
-void predict(float *query_vector, vector<layer_t>& layers, vector<float>& vectors, vector<float>& vectors_copy,
+size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vectors, vector<float>& vectors_copy,
         size_t P, size_t L, size_t d, size_t n) {
 
     // All centroids on the (L-1)th layer should be checked.
@@ -275,7 +286,33 @@ void predict(float *query_vector, vector<layer_t>& layers, vector<float>& vector
         // Printing vector before transformations, to see the one after transformations use 'vectors'.
         printf("%f ", *(vectors_copy.data() + best_result * d + i));
     }
-    printf("] inner product = %f", maximum_result);
+    printf("] inner product = %f\n", maximum_result);
+    return best_result;
+}
+
+template <typename T>
+vector<T> load_vecs (const char* fname, size_t& d, size_t& n, size_t m){
+    FILE* f = fopen(fname, "rb");
+    int dim;
+    fread(&dim, 1, sizeof(int), f);
+    fseek(f, 0, SEEK_END);
+    size_t fsz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    size_t row_size = sizeof(T) * dim + sizeof(int);
+    n = fsz / row_size;
+    if(fsz != n * row_size){
+        printf("Wrong file size\n");
+        exit(1);
+    }
+    d = dim + m;
+    vector<T> v (n * d);
+    for(size_t i = 0; i < n; i++){
+        int dummy;
+        fread(&dummy, 1, sizeof(int), f);
+        assert(dummy == dim);
+        fread(v.data() + d * i, dim, sizeof(T), f);
+    }
+    return v;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -299,7 +336,14 @@ int main(int argc, char* argv[]) {
     P          = atoi(argv[5]);
     VERBOSE    = (bool) atoi(argv[6]);
 
-    vectors = load_data(input_file, d, n, m);
+    bool FRANKOWY = 0;
+
+    if(!FRANKOWY){
+        vectors = load_vecs<float>(input_file, d, n, m);
+    }
+    else{
+        vectors = load_data(input_file, d, n, m);
+    }
     vectors_copy = vectors;
 
     normalize_(vectors, n, d);
@@ -307,19 +351,43 @@ int main(int argc, char* argv[]) {
 
     vector<layer_t> layers = train(vectors, n, d, L);
 
-    queries = load_data(query_file, dq, nq, m);
+    if(!FRANKOWY){
+        queries = load_vecs<float>(query_file, dq, nq, m);
+    }
+    else{
+        queries = load_data(query_file, dq, nq, m);
+    }
     expand_queries_(queries, nq, dq, m);
     assert(dq == d and "Queries and Vectors dimension mismatch!");
 
+    vector<int> predictions;
     for (size_t i = 0; i < nq; i++) {
         if (VERBOSE)
             print_query(queries, i, d);
 
         float* q = queries.data() + (i*d);
-        predict(q, layers, vectors, vectors_copy,
+        size_t res = predict(q, layers, vectors, vectors_copy,
                 P, L, d, n);
+        predictions.push_back(res);
     }
     printf("\n");
+    if(FRANKOWY){
+        return 0;
+    }
+    printf("Checking against ground truth\n");
+    for(size_t i = 0; i < nq; i++){
+        float inner_with_chosen = faiss::fvec_inner_product(vectors_copy.data() + predictions[i] * d,
+                queries.data() + i * d, d - m);
+        size_t rank = 0;
+        for (size_t j = 0; j < n; j++) {
+            float inner_with_other = faiss::fvec_inner_product(vectors_copy.data() + j * d,
+                    queries.data() + i * d, d - m);
+            if (inner_with_other > inner_with_chosen) {
+                rank++;
+            }
+        }
+        printf("Rank for query %zu: %zu\n", i, rank);
+    }
 
     return 0;
 }
