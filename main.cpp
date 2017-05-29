@@ -184,18 +184,18 @@ vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
 
         // Compute number of clusters and cluster size on this layer.
         size_t cluster_size = (size_t) floor(pow(n, (float) (layer_id + 1) / (float) (L+1)));
-        layers[layer_id].cluster_num = (size_t) floor((float) n / (float) cluster_size);
+        layers[layer_id].num_clusters = (size_t) floor((float) n / (float) cluster_size);
 
-        LOG("cluster_num = %zu", layers[layer_id].cluster_num);
+        LOG("num_clusters = %zu", layers[layer_id].num_clusters);
 
-        size_t n_points = (layer_id == 0) ? n : layers[layer_id - 1].cluster_num;
+        size_t n_points = (layer_id == 0) ? n : layers[layer_id - 1].num_clusters;
         float *points = (layer_id == 0) ? vectors.data() : layers[layer_id - 1].centroids.data();
 
         layers[layer_id].assignments = vector<size_t>(n_points);
-        layers[layer_id].centroids = vector<float>(layers[layer_id].cluster_num * d);
+        layers[layer_id].centroids = vector<float>(layers[layer_id].num_clusters * d);
 
         // Cluster.
-        k_means_clustering_(points, n_points, d, layers[layer_id].cluster_num,
+        k_means_clustering_(points, n_points, d, layers[layer_id].num_clusters,
                 layers[layer_id].assignments.data(), layers[layer_id].centroids.data());
 
         if (VERBOSE)
@@ -209,7 +209,7 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
         size_t P, size_t L, size_t d, size_t n) {
 
     // All centroids on the (L-1)th layer should be checked.
-    size_t k = layers[layers.size() - 1].cluster_num;
+    size_t k = layers[layers.size() - 1].num_clusters;
     vector<size_t> candidates(k);
 
     for (size_t i = 0; i < candidates.size(); i++) {
@@ -246,7 +246,7 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
                 printf("candidate set (CL): ");
             }
         }
-        size_t num_points = (layer_id == 0) ? n : layers[layer_id - 1].cluster_num;
+        size_t num_points = (layer_id == 0) ? n : layers[layer_id - 1].num_clusters;
         LOG("np: %zu", num_points);
         candidates.clear();
         // Mark centroids to be checked at next layer.
