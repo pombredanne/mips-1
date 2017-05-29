@@ -64,26 +64,6 @@ inline bool comp(const pair<size_t, float> &a, const pair<size_t, float> &b) {
     return (a.second > b.second);
 }
 
-void print_centroids(layer_t &layer, size_t d) {
-    printf("centroids' coordinates:\n");
-    for (size_t i = 0; i < layer.cluster_num; i++) {
-        printf("%zu: [ ", i);
-        for (size_t j = 0; j < d; j++) {
-            printf("%f ", layer.centroids[i * d + j]);
-        }
-        printf("]\n");
-    }
-}
-
-void print_query(vector<float>& queries, size_t i, size_t d) {
-    printf("\n--------------------------------------");
-    printf("\nquery %zu = [ ", i);
-    for (size_t j = 0; j < d; j++) {
-        printf("%f ", *(queries.data() + i * d + j));
-    }
-    printf("] ");
-}
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Vectors
 
@@ -150,56 +130,27 @@ void assign_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, 
 
 void k_means_clustering_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
     faiss::kmeans_clustering(d, n, k, vectors, centroids);
-    for(size_t i = 0; i < k; i++){
-        LOG("Cluster %zu [", i);
-        for(size_t j = 0; j < d; j++){
-            printf("%f ", centroids[d*i+j]);
-        }
-    }
     assign_(vectors, n, d, k, assignments, centroids);
-    LOG("Clustering %zu points into %zu centroids", n, k);
-    for(size_t i = 0; i < n; i++){
-        /*
-        printf("The point %zu was [", i);
-        for(size_t j = 0; j < d; j++){
-            printf("%f ", vectors[d*i+j]);
-        }
-        printf("]");
-        */
-        LOG("  it got assigned to centroid %zu [", assignments[i]);
-        /*
-        for(size_t j = 0; j < d; j++){
-            printf("%f ", centroids[d*assignments[i]+j]);
-        }
-        printf("]\n\n");
-        */
-    }
 }
 
 vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
     vector<layer_t> layers = vector<layer_t>(L);
 
     for (size_t layer_id = 0; layer_id < L; layer_id++) {
-        LOG("layer = %zu", layer_id);
-
         // Compute number of clusters and cluster size on this layer.
-        size_t cluster_size = (size_t) floor(pow(n, (float) (layer_id + 1) / (float) (L+1)));
-        layers[layer_id].num_clusters = (size_t) floor((float) n / (float) cluster_size);
-
-        LOG("num_clusters = %zu", layers[layer_id].num_clusters);
+        size_t cluster_size = (size_t) floor(pow(n, (layer_id + 1.f) / (L + 1.f)));
+        layers[layer_id].num_clusters = (size_t) floor((float) n / cluster_size);
 
         size_t n_points = (layer_id == 0) ? n : layers[layer_id - 1].num_clusters;
-        float *points = (layer_id == 0) ? vectors.data() : layers[layer_id - 1].centroids.data();
+        float *points   = (layer_id == 0) ? vectors.data() : layers[layer_id - 1].centroids.data();
 
         layers[layer_id].assignments = vector<size_t>(n_points);
-        layers[layer_id].centroids = vector<float>(layers[layer_id].num_clusters * d);
+        layers[layer_id].centroids   = vector<float>(layers[layer_id].num_clusters * d);
 
         // Cluster.
-        k_means_clustering_(points, n_points, d, layers[layer_id].num_clusters,
-                layers[layer_id].assignments.data(), layers[layer_id].centroids.data());
-
-        if (VERBOSE)
-            print_centroids(layers[layer_id], d);
+        k_means_clustering_(points,
+                            n_points, d, layers[layer_id].num_clusters,
+                            layers[layer_id].assignments.data(), layers[layer_id].centroids.data());
     }
 
     return layers;
@@ -217,44 +168,26 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
     }
 
     for (size_t layer_id = L - 1; layer_id != (size_t)(-1); layer_id--) {
-        LOG("layer = %zu", layer_id)
 
-            vector<std::pair<size_t, float> > best_centroids;
+        vector<std::pair<size_t, float> > best_centroids;
         // Multiply previously marked centroids with the query.
         for (size_t i = 0; i < candidates.size(); i++) {
             size_t c = candidates[i];
             float result = faiss::fvec_inner_product(query_vector, layers[layer_id].centroids.data() + c * d, d);
             best_centroids.push_back(std::make_pair(c, result));
-
-            LOG("centroid %zu: result %f", c, result);
         }
 
         // We are interested in exploring P first centroids on this vector.
         sort(best_centroids.begin(), best_centroids.end(), comp);
-        if (VERBOSE) {
-            printf("best_centroids:\n");
-            for (size_t i = 0; i < best_centroids.size() && i < P; i++) {
-                cout << best_centroids[i].first << " " << best_centroids[i].second << endl;
-            }
-        }
 
-        if (VERBOSE) {
-            if (layer_id > 0) {
-                printf("next layer centroids: ");
-            }
-            else {
-                printf("candidate set (CL): ");
-            }
-        }
         size_t num_points = (layer_id == 0) ? n : layers[layer_id - 1].num_clusters;
-        LOG("np: %zu", num_points);
         candidates.clear();
+
         // Mark centroids to be checked at next layer.
         for (size_t i = 0; i < num_points; i++) {
             for (size_t j = 0; j < P && j < best_centroids.size(); j++) {
                 if (layers[layer_id].assignments[i] == best_centroids[j].first) {
                     candidates.push_back(i);
-                    if (VERBOSE) { printf("%zu ", i); }
                     break;
                 }
             }
@@ -278,13 +211,6 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
             best_result = c;
         }
     }
-    printf("best result = %zu : [", best_result);
-    for (size_t i = 0; i < d; i++) {
-        // Printing vector before transformations, to see the one after transformations use 'vectors'.
-        printf("%f ", *(vectors_copy.data() + best_result * d + i));
-    }
-    printf("] inner product = %f\n", maximum_result);
-    return best_result;
 }
 
 template <typename T>
@@ -312,6 +238,16 @@ vector<T> load_vecs (const char* fname, size_t& d, size_t& n, size_t m){
     return v;
 }
 
+template <typedef T>
+void dump_vecs(vector<T> vec, int d, const char* fname) {
+    ofstream fout(fname, ios::out | ios::binary);
+
+    fout.write((char*) &d, sizeof(int));
+    fout.write((char*) &vec[0], vec.size() * sizeof(T));
+
+    fout.close();
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Main
 
@@ -335,55 +271,27 @@ int main(int argc, char* argv[]) {
 
     bool FRANKOWY = 0;
 
-    if(!FRANKOWY){
-        vectors = load_vecs<float>(input_file, d, n, m);
-    }
-    else{
-        vectors = load_data(input_file, d, n, m);
-    }
+
+    vectors = load_data(input_file, d, n, m);
     vectors_copy = vectors;
 
     normalize_(vectors, n, d);
     expand_(vectors, n, d, m);
 
-    vector<layer_t> layers = train(vectors, n, d, L);
-
-    if(!FRANKOWY){
-        queries = load_vecs<float>(query_file, dq, nq, m);
-    }
-    else{
-        queries = load_data(query_file, dq, nq, m);
-    }
+    queries = load_data(query_file, dq, nq, m);
     expand_queries_(queries, nq, dq, m);
+
     assert(dq == d and "Queries and Vectors dimension mismatch!");
+
+    vector<layer_t> layers = train(vectors, n, d, L);
 
     vector<int> predictions;
     for (size_t i = 0; i < nq; i++) {
-        if (VERBOSE)
-            print_query(queries, i, d);
+        size_t res = predict(queries.data() + (i*d),
+                             layers, vectors, vectors_copy,
+                             P, L, d, n);
 
-        float* q = queries.data() + (i*d);
-        size_t res = predict(q, layers, vectors, vectors_copy,
-                P, L, d, n);
         predictions.push_back(res);
-    }
-    printf("\n");
-    if(FRANKOWY){
-        return 0;
-    }
-    printf("Checking against ground truth\n");
-    for(size_t i = 0; i < nq; i++){
-        float inner_with_chosen = faiss::fvec_inner_product(vectors_copy.data() + predictions[i] * d,
-                queries.data() + i * d, d - m);
-        size_t rank = 0;
-        for (size_t j = 0; j < n; j++) {
-            float inner_with_other = faiss::fvec_inner_product(vectors_copy.data() + j * d,
-                    queries.data() + i * d, d - m);
-            if (inner_with_other > inner_with_chosen) {
-                rank++;
-            }
-        }
-        printf("Rank for query %zu: %zu\n", i, rank);
     }
 
     return 0;
