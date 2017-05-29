@@ -85,7 +85,7 @@ void print_query(vector<float>& queries, size_t i, size_t d) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Linear Algebra
+// Vectors
 
 inline float fvec_norm_L2(float *vec, size_t size) {
     float sqr = faiss::fvec_norm_L2sqr(vec, size);
@@ -98,9 +98,6 @@ inline void scale_(float* vec, float alpha, size_t size) {
         vec[i] /= alpha;
     }
 }
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Vectors
 
 void normalize_(vector<float>& vectors, size_t n, size_t d) {
     float max_norm = 0;
