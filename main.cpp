@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 #include "faiss/utils.h"
 #include "faiss/Clustering.h"
 
@@ -16,49 +17,14 @@ using namespace std;
 #define LOG(msg, ...) if(VERBOSE) { printf("\n" msg "\n", ##__VA_ARGS__); }
 bool VERBOSE = true;
 
-struct layer_t {
-    vector<size_t> assignments; // Centroid number to which ith vector is assigned.
-    vector<float> centroids;
-    size_t cluster_num;
-};
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Utilities
 
-vector<float> load_data(const char *filename, size_t& d, size_t& n, size_t m) {
-    FILE *input;
-    input = fopen(filename, "r");
-    if (input == NULL) {
-        printf("Couldn't open input file.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if(!fscanf(input, "%zu", &n)){
-        printf("Bad input file format.");
-        exit(EXIT_FAILURE);
-    }
-    if(!fscanf(input, "%zu", &d)){
-        printf("Bad input file format.");
-        exit(EXIT_FAILURE);
-    }
-    d += m; // Extending here.
-
-    vector<float> vectors(n * d);
-    for (size_t i = 0; i < n; i++) {
-        for (size_t j = 0; j < d - m; j++) {
-            if(!fscanf(input, "%f", &vectors[j + (i * d)])){
-                printf("Bad input file format.");
-                exit(EXIT_FAILURE);
-            }
-        }
-        for (size_t j = d - m; j < d; j++){
-            vectors[j + (i * d)] = 0.0;
-        }
-    }
-    fclose(input);
-
-    return vectors;
-}
+struct layer_t {
+    vector<size_t> assignments; // Centroid number to which ith vector is assigned.
+    vector<float> centroids;
+    size_t num_clusters;
+};
 
 inline bool comp(const pair<size_t, float> &a, const pair<size_t, float> &b) {
     return (a.second > b.second);
@@ -115,14 +81,14 @@ void expand_queries_(vector<float> &queries, size_t n, size_t d, size_t m) {
 
 void assign_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
     for (size_t i=0; i<n; i++) {
-        float best = numeric_limits<float>::max();
-        float dist = 0;
+        float best = numeric_limits<float>::min();
+        float sim = 0;
 
         for (size_t j=0; j<k; j++) {
-            dist = faiss::fvec_inner_product(vectors + (i*d), centroids + (j*d), d);
-            if (best > dist) {
+            sim = faiss::fvec_inner_product(vectors + (i*d), centroids + (j*d), d);
+            if (sim > best) {
                 assignments[i] = j;
-                best = dist;
+                best = sim;
             }
         }
     }
@@ -137,7 +103,6 @@ vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
     vector<layer_t> layers = vector<layer_t>(L);
 
     for (size_t layer_id = 0; layer_id < L; layer_id++) {
-        // Compute number of clusters and cluster size on this layer.
         size_t cluster_size = (size_t) floor(pow(n, (layer_id + 1.f) / (L + 1.f)));
         layers[layer_id].num_clusters = (size_t) floor((float) n / cluster_size);
 
@@ -156,6 +121,8 @@ vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
     return layers;
 }
 
+
+
 size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vectors, vector<float>& vectors_copy,
         size_t P, size_t L, size_t d, size_t n) {
 
@@ -168,8 +135,8 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
     }
 
     for (size_t layer_id = L - 1; layer_id != (size_t)(-1); layer_id--) {
-
         vector<std::pair<size_t, float> > best_centroids;
+
         // Multiply previously marked centroids with the query.
         for (size_t i = 0; i < candidates.size(); i++) {
             size_t c = candidates[i];
@@ -196,21 +163,20 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
         best_centroids.clear();
     }
     // Last layer - find best match.
-    size_t best_result = -1;
-    float maximum_result = -1;
-    bool maximum_initialized = false;
+    size_t best_result   = -1;
+    float maximum_result = std::numeric_limits<float>::min();
+
     for (size_t i = 0; i < candidates.size(); i++) {
         size_t c = candidates[i];
+
         float result = faiss::fvec_inner_product(query_vector, vectors.data() + c * d, d);
-        if (!maximum_initialized) {
-            maximum_initialized = true;
-            maximum_result = result;
-            best_result = c;
-        } else if (result > maximum_result) {
+        if (result > maximum_result) {
             maximum_result = result;
             best_result = c;
         }
     }
+
+    return best_result;
 }
 
 template <typename T>
@@ -238,8 +204,8 @@ vector<T> load_vecs (const char* fname, size_t& d, size_t& n, size_t m){
     return v;
 }
 
-template <typedef T>
-void dump_vecs(vector<T> vec, int d, const char* fname) {
+template <typename T>
+void dump_vecs(vector<T>& vec, int d, const char* fname) {
     ofstream fout(fname, ios::out | ios::binary);
 
     fout.write((char*) &d, sizeof(int));
@@ -254,7 +220,7 @@ void dump_vecs(vector<T> vec, int d, const char* fname) {
 int main(int argc, char* argv[]) {
     char* input_file;
     char* query_file;
-    vector<float> vectors, vectors_copy, queries;
+    vector<float> vectors, vectors_copy, queries, queries_copy;
     size_t d, dq, n, nq, m, L, P;  // vector dim, query vec dim, num vectors, n queries, num components, num layers
 
     if(argc != 7){
@@ -269,16 +235,14 @@ int main(int argc, char* argv[]) {
     P          = atoi(argv[5]);
     VERBOSE    = (bool) atoi(argv[6]);
 
-    bool FRANKOWY = 0;
-
-
-    vectors = load_data(input_file, d, n, m);
+    vectors = load_vecs<float>(input_file, d, n, m);
     vectors_copy = vectors;
 
     normalize_(vectors, n, d);
     expand_(vectors, n, d, m);
 
-    queries = load_data(query_file, dq, nq, m);
+    queries = load_vecs<float>(query_file, dq, nq, m);
+    queries_copy = queries;
     expand_queries_(queries, nq, dq, m);
 
     assert(dq == d and "Queries and Vectors dimension mismatch!");
@@ -293,6 +257,14 @@ int main(int argc, char* argv[]) {
 
         predictions.push_back(res);
     }
+
+    dump_vecs(predictions, 1,   "vectors/preds.bin");
+
+    dump_vecs(vectors,      d,  "vectors/vectors.bin");
+    dump_vecs(vectors_copy, d,  "vectors/vectors_copy.bin");
+
+    dump_vecs(queries,      dq, "vectors/queries.bin");
+    dump_vecs(queries_copy, dq, "vectors/queries_copy.bin");
 
     return 0;
 }
