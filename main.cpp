@@ -255,6 +255,7 @@ int main(int argc, char* argv[]) {
                              layers, vectors, vectors_copy,
                              P, L, d, n);
 
+        printf("p: %zu\n", res);
         predictions.push_back(res);
     }
 
