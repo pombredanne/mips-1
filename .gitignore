@@ -2,3 +2,4 @@ k-means-mips
 faiss/
 .idea/
 vectors/
+.ipynb_checkpoints/
