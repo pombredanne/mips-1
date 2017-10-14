@@ -1,10 +1,13 @@
 
 
-COMPILE=g++ -I. -std=c++11
+COMPILE=g++ -I. -std=c++11 -fopenmp
 
-all: dirs bin/quantization
+all: dirs bin/quantization bin/alsh
 
 bin/quantization: src/quantization.cpp
+	${COMPILE} $^ -o $@
+
+bin/alsh: src/alsh.cpp
 	${COMPILE} $^ -o $@
 
 dirs:
