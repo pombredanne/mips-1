@@ -1,6 +1,6 @@
 
 
-COMPILE=g++ -I.
+COMPILE=g++ -I. -std=c++11
 
 all: dirs bin/quantization
 
@@ -9,3 +9,6 @@ bin/quantization: src/quantization.cpp
 
 dirs:
 	mkdir -p bin
+
+clean:
+	rm -rf bin
