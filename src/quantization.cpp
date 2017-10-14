@@ -7,44 +7,41 @@
 #include <string>
 #include <algorithm> 
 #include <numeric>  
-#include "faiss/faiss/utils.h"
-#include "faiss/faiss/Clustering.h"
+//#include "faiss/faiss/utils.h"
+//#include "faiss/faiss/Clustering.h"
 
 using namespace std;
 
-struct kmeansResult {
-	vector<vector<int> > centroids;
-	vector<int> assignedCentroids;
+struct kmeans_result {
+	vector<vector<float> > centroids;
+	vector<float> assignedCentroids;
 };
 
-vector<vector<int> > load_data(string filename) {
-	vector<vector<int> > vectors;
+vector<float> load_data(string filename, int *n, int *m) {//numberOfVectors, lengthOfVector
+	vector<float> data;
 	ifstream infile(filename);
-	int m, n;//liczba wektorow, dlugsc wektora
-	infile >> m >> n;
-	cout << m << " " << n << endl;
-	for (int i = 0; i < m; i++) {
-		vector<int> vector;
-		for (int j = 0; j < n; j++)	{
-			int tmp;
-			infile >> tmp;
-			vector.push_back(tmp);
-		}
-		vectors.push_back(vector);
+	infile >> *n >> *m;
+	cout << *n << " " << *m << endl;
+	for (size_t i = 0; i < *n * *m; i++) {
+		float tmp;
+		infile >> tmp;
+		data.push_back(tmp);
 	}
 	infile.close();
-	return vectors;
+	return data;
 }
 
-void printData(vector<vector<int> > vectors) {
-	for (auto& vec: vectors) {
-		for (auto& val: vec) {
-			cout << val;
+void print_data(vector<float> data, int n, int m) {
+	for (int i = 0; i<n; i++) {
+		for(int j = 0; j<m; j++){
+
+			cout << data[i*m+j]<<" ";
 		}
+		cout<<endl;
 	}
 }
 
-vector<size_t> prepareIndicesVector(int m) {
+vector<size_t> prepare_indices_vector(int m) {
 	vector<size_t> indices;
 	for (int i = 0; i < m; i++) {
 		indices.push_back(i);
@@ -53,26 +50,21 @@ vector<size_t> prepareIndicesVector(int m) {
 	return indices;
 }
 
-void printVector(vector<size_t> vec) {
+void print_vector(vector<size_t> vec) {
 	for (auto& val: vec) {
 		cout << val << " ";
 	}
 	cout << endl;
 }
 
-void printParts(vector<vector<vector<int> > > data) {
-	for (auto& mat: data) {
-		for (auto& vec: mat) {
-			for (auto& val: vec) {
-				cout << val << " ";
-			}
-			cout << endl;
-		}
+void print_parts(vector<vector<float> >  data, int parts_number, int n, int m) {
+	for (int i = 0;i<parts_number;i++) {
+		print_data(data[i],n,m/parts_number);
 		cout << endl;
 	}
 }
 
-void applyPermutation(vector<int>& vec, vector<size_t> indices) {
+void apply_permutation(float* vec, vector<size_t> indices) {
 	for (size_t i = 0; i < indices.size(); i++) {
 		size_t current = i;
 		while (i != indices[current]) {
@@ -85,36 +77,41 @@ void applyPermutation(vector<int>& vec, vector<size_t> indices) {
 	}
 }
 
-vector<vector<vector<int> > > makeParts(vector<vector<int> > data, int numberOfParts) {
-	vector < vector<vector<int> > > partialData;
-	int length = data[0].size() / numberOfParts;
-	vector<vector<int> > tmpVector;
-
-	for (size_t it = 0; it < data[0].size(); it+=length) {
-		for (size_t i = 0; i < data.size(); i++) {
-			vector<int> tmpIntVector;
-			for (size_t j = it; j < it+length; j++) {
-				tmpIntVector.push_back(data[i][j]);				
-			}
-			tmpVector.push_back(tmpIntVector);
-			tmpIntVector.clear();
+vector<vector<float> >  make_parts(vector<float> data, int numberOfParts, int n, int m) {
+	vector<vector<float> > result(numberOfParts);
+	int length = m / numberOfParts;
+	for (size_t i = 0; i < n; i++) {
+		for (size_t j = 0; j < m; j++) {
+			result[j/length].push_back(data[i*m+j]);
 		}
-		partialData.push_back(tmpVector);
-		tmpVector.clear();
 	}
-	
-	return partialData;
+	return result;
 }
+//
+//void assign(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
+//	for (size_t i=0; i<n; i++) {
+//		float best = numeric_limits<float>::max();
+//		float dist = 0;
+//
+//		for (size_t j=0; j<k; j++) {
+//			dist = faiss::fvec_inner_product(vectors + (i*d), centroids + (j*d), d);
+//			if (best > dist) {
+//				assignments[i] = j;
+//				best = dist;
+//			}
+//		}
+//	}
+//}
+//void perform_kmeans(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
+//	faiss::kmeans_clustering(d, n, k, vectors, centroids);
+//	assign(vectors, n, d, k, assignments, centroids);
+//}
 
-kmeansResult DoKmeans() {
-	return kmeansResult();
-}
-
-vector<vector<int> > BuildTable(
-		int numberOfCentroids, vector<kmeansResult> data, vector<vector<int> > query) {
-	vector<vector<int> > table;
+vector<vector<float> > build_table(
+		int numberOfCentroids, vector<kmeans_result> data, vector<vector<int> > query) {
+	vector<vector<float> > table;
 	for (int i = 0; i < numberOfCentroids; i++) {
-		vector<int>tmpVector;
+		vector<float>tmpVector;
 		for (size_t j = 0; j < data.size(); j++) {
 			int innerProduct = inner_product(data[j].centroids[i].begin(), data[j].centroids[i].end(), query[j].begin(), 0.0);
 			tmpVector.push_back(innerProduct);
@@ -125,8 +122,8 @@ vector<vector<int> > BuildTable(
 	return table;
 }
 
-int chooseVectorIndex(vector<vector<int> > innerTable, vector<kmeansResult> data) {
-	vector<int> results;
+int choose_vector_index(vector<vector<float> > innerTable, vector<kmeans_result> data) {
+	vector<float> results;
 	for (size_t i = 0; i < data[0].assignedCentroids.size(); i++) {
 		int partialResult = 0;
 		for (size_t j = data.size(); j < data.size(); j++) {
@@ -134,21 +131,27 @@ int chooseVectorIndex(vector<vector<int> > innerTable, vector<kmeansResult> data
 		}
 		results.push_back(partialResult);
 	}
-	vector<int>::iterator max = max_element(results.begin(), results.end());
+	vector<float>::iterator max = max_element(results.begin(), results.end());
 	return distance(results.begin(), max);
 }
 
 int main() {
-	vector<vector<int> > data = load_data("test.txt");
-	printData(data);
-	vector<size_t> indices = prepareIndicesVector(8);
-	printVector(indices);
-	applyPermutation(data[0], indices);
+	int n,m;
+	vector<float> data = load_data("test.txt",&n,&m);
+	print_data(data,n,m);
+	vector<size_t> indices = prepare_indices_vector(8);
+	print_vector(indices);
+	for(int i = 0; i<n;i++)
+	{
+		apply_permutation(&data[m*i], indices);
+	}
 	cout << endl;
-	printData(data);
+	print_data(data,n,m);
 	cout << endl;
-	vector<vector<vector<int> > > parts = makeParts(data, 4);
-	printParts(parts);
+	int numberOfParts=2;
+	vector<vector<float> >  parts = make_parts(data,numberOfParts,n,m);
+	//perform_kmeans(parts[0],)
+	print_parts(parts,numberOfParts,n,m);
 	return 0;
 }
 
