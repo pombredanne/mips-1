@@ -255,7 +255,7 @@ int main() {
     // todo, can we merge this with similar code above?
     #pragma omp parallel for
     for (int i = 0; i < number_of_queries; i++) {
-        scale_(queries[i], U / maximum_norm)
+        scale_(queries[i], U / maximum_norm);
 
         query_norm[i] = euclidean_norm(queries[i]);
         float q_norm = query_norm[i];
