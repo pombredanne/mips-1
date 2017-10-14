@@ -7,8 +7,8 @@
 #include <string>
 #include <algorithm> 
 #include <numeric>  
-#include "faiss/faiss/utils.h"
-#include "faiss/faiss/Clustering.h"
+#include "faiss/utils.h"
+#include "faiss/Clustering.h"
 
 using namespace std;
 
