@@ -11,6 +11,7 @@ bin/alsh: src/alsh.cpp faiss/libfaiss.a
 	${COMPILE} $^ -o $@
 
 faiss/libfaiss.a:
+	(cp makefile.inc faiss/makefile.inc)
 	(cd faiss; make -j 4)
 
 dirs:
