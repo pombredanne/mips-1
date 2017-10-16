@@ -13,8 +13,8 @@
 using namespace std;
 
 struct kmeans_result {
-	vector<vector<float> > centroids;
-	vector<float> assignedCentroids;
+	vector<float> centroids;
+	vector<size_t> assigments;
 };
 
 vector<float> load_data(string filename, int *n, int *m) {//numberOfVectors, lengthOfVector
@@ -57,6 +57,12 @@ void print_vector(vector<size_t> vec) {
 	cout << endl;
 }
 
+void print_vectorF(vector<float> vec) {
+	for (auto& val: vec) {
+		cout << val << " ";
+	}
+	cout << endl;
+}
 void print_parts(vector<vector<float> >  data, int parts_number, int n, int m) {
 	for (int i = 0;i<parts_number;i++) {
 		print_data(data[i],n,m/parts_number);
@@ -87,53 +93,53 @@ vector<vector<float> >  make_parts(vector<float> data, int numberOfParts, int n,
 	}
 	return result;
 }
-//
-//void assign(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
-//	for (size_t i=0; i<n; i++) {
-//		float best = numeric_limits<float>::max();
-//		float dist = 0;
-//
-//		for (size_t j=0; j<k; j++) {
-//			dist = faiss::fvec_inner_product(vectors + (i*d), centroids + (j*d), d);
-//			if (best > dist) {
-//				assignments[i] = j;
-//				best = dist;
-//			}
+
+void assign(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
+	for (size_t i=0; i<n; i++) {
+		float best = numeric_limits<float>::max();
+		float dist = 0;
+
+		for (size_t j=0; j<k; j++) {
+			dist = faiss::fvec_inner_product(vectors + (i*d), centroids + (j*d), d);
+			if (best > dist) {
+				assignments[i] = j;
+				best = dist;
+			}
+		}
+	}
+}
+void perform_kmeans(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
+	faiss::kmeans_clustering(d, n, k, vectors, centroids);
+	assign(vectors, n, d, k, assignments, centroids);
+}
+
+//vector<vector<float> > build_table(
+//		int numberOfCentroids, vector<kmeans_result> data, vector<vector<int> > query) {
+//	vector<vector<float> > table;
+//	for (int i = 0; i < numberOfCentroids; i++) {
+//		vector<float>tmpVector;
+//		for (size_t j = 0; j < data.size(); j++) {
+//			int innerProduct = inner_product(data[j].centroids[i].begin(), data[j].centroids[i].end(), query[j].begin(), 0.0);
+//			tmpVector.push_back(innerProduct);
 //		}
+//		table.push_back(tmpVector);
+//		tmpVector.clear();
 //	}
+//	return table;
 //}
-//void perform_kmeans(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
-//	faiss::kmeans_clustering(d, n, k, vectors, centroids);
-//	assign(vectors, n, d, k, assignments, centroids);
+//
+//int choose_vector_index(vector<vector<float> > innerTable, vector<kmeans_result> data) {
+//	vector<float> results;
+//	for (size_t i = 0; i < data[0].assignedCentroids.size(); i++) {
+//		int partialResult = 0;
+//		for (size_t j = data.size(); j < data.size(); j++) {
+//			partialResult += innerTable[data[j].assignedCentroids[i]][j];
+//		}
+//		results.push_back(partialResult);
+//	}
+//	vector<float>::iterator max = max_element(results.begin(), results.end());
+//	return distance(results.begin(), max);
 //}
-
-vector<vector<float> > build_table(
-		int numberOfCentroids, vector<kmeans_result> data, vector<vector<int> > query) {
-	vector<vector<float> > table;
-	for (int i = 0; i < numberOfCentroids; i++) {
-		vector<float>tmpVector;
-		for (size_t j = 0; j < data.size(); j++) {
-			int innerProduct = inner_product(data[j].centroids[i].begin(), data[j].centroids[i].end(), query[j].begin(), 0.0);
-			tmpVector.push_back(innerProduct);
-		}
-		table.push_back(tmpVector);
-		tmpVector.clear();
-	}
-	return table;
-}
-
-int choose_vector_index(vector<vector<float> > innerTable, vector<kmeans_result> data) {
-	vector<float> results;
-	for (size_t i = 0; i < data[0].assignedCentroids.size(); i++) {
-		int partialResult = 0;
-		for (size_t j = data.size(); j < data.size(); j++) {
-			partialResult += innerTable[data[j].assignedCentroids[i]][j];
-		}
-		results.push_back(partialResult);
-	}
-	vector<float>::iterator max = max_element(results.begin(), results.end());
-	return distance(results.begin(), max);
-}
 
 int main() {
 	int n,m;
@@ -152,6 +158,17 @@ int main() {
 	vector<vector<float> >  parts = make_parts(data,numberOfParts,n,m);
 	//perform_kmeans(parts[0],)
 	print_parts(parts,numberOfParts,n,m);
+	vector<kmeans_result> kmeans(numberOfParts);
+	for(int i=0;i<numberOfParts;i++)
+	{
+		int k = 2; //liczba centroidów
+
+		kmeans[i].centroids = vector<float>(k*m);
+		kmeans[i].assigments = vector<size_t>(n);
+		perform_kmeans(parts[i].data(),n,m,k,kmeans[i].assigments.data(), kmeans[i].centroids.data());
+		print_vectorF(kmeans[i].centroids);
+		print_vector(kmeans[i].assigments);
+	}
 	return 0;
 }
 
