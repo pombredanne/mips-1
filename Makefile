@@ -1,14 +1,15 @@
 
+LIBS=-Lfaiss -lfaiss -lopenblas
 
-COMPILE=g++ -O2 -I. -std=c++11 -fopenmp -Lfaiss -lfaiss -lopenblas
+COMPILE=g++ -O2 -I. -Wall -Wextra -std=c++11 -fopenmp
 
 all: dirs bin/quantization bin/alsh
 
 bin/quantization: src/quantization.cpp faiss/libfaiss.a
-	${COMPILE} $^ -o $@
+	${COMPILE} $^ -o $@ ${LIBS}
 
 bin/alsh: src/alsh.cpp faiss/libfaiss.a
-	${COMPILE} $^ -o $@
+	${COMPILE} $^ -o $@ ${LIBS}
 
 faiss/libfaiss.a:
 	(cp makefile.inc faiss/makefile.inc)
@@ -19,3 +20,4 @@ dirs:
 
 clean:
 	rm -rf bin
+	(cd faiss; make clean)
