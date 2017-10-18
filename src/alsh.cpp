@@ -135,6 +135,33 @@ vector<vector<float>> load_db(string fname,
     return db;
 }
 
+void expand(vector<vector<float> >& vec, size_t num, vector<float>& norms, float max_norm, size_t length, bool queries) {
+    #pragma omp parallel for
+    for (size_t i = 0; i < num; i++) {
+        scale_(vec[i], U / max_norm);
+
+        float vec_norm = euclidean_norm(vec[i]);
+        norms[i] = vec_norm;
+
+        for (auto j = length; j < length + m; j++) {
+            if (!queries) {
+                vec[i][j] = vec_norm;
+                vec_norm *= vec_norm;
+            } else {
+                vec[i][j] = 0.5f;
+            }
+        }
+
+        for (auto j = length + m; j < length + 2*m; j++) {
+            if (!queries) {
+                vec[i][j] = 0.5f;
+            } else {
+                vec[i][j] = vec_norm;
+                vec_norm *= vec_norm;
+            }
+        }
+    }
+}
 
 void main_alsh() {
     omp_set_num_threads(4);
@@ -182,22 +209,7 @@ void main_alsh() {
 
     auto maximum_norm = max_value(vector_norms);
 
-    #pragma omp parallel for
-    for (size_t i = 0; i < number_of_vectors; i++) {
-        scale_(db[i], U / maximum_norm);
-
-        float vec_norm = euclidean_norm(db[i]);
-        vector_norms[i] = vec_norm;
-
-        for (auto j = vector_length; j < vector_length + m; j++) {
-            db[i][j] = vec_norm;
-            vec_norm *= vec_norm;
-        }
-
-        for (auto j = vector_length + m; j < vector_length + 2*m; j++) {
-            db[i][j] = 0.5f;
-        }
-    }
+    expand(db, number_of_vectors, vector_norms, maximum_norm, vector_length, false);
     
     time_report_printf("Hashing vectors... ");
 
@@ -250,24 +262,7 @@ void main_alsh() {
 
     time_report_printf("Scaling queries, computing norms and extending queries...");
 
-    // todo, can we merge this with similar code above?
-    #pragma omp parallel for
-    for (size_t i = 0; i < number_of_queries; i++) {
-        scale_(queries[i], U / maximum_norm);
-
-        query_norm[i] = euclidean_norm(queries[i]);
-        float q_norm = query_norm[i];
-
-        for (size_t j = query_length; j < query_length + m; j++) {
-            queries[i][j] = 0.5f;
-        }
-
-        for (size_t j = query_length + m; j < query_length + 2*m; j++) {
-            queries[i][j] = q_norm;
-            q_norm *= q_norm;
-        }
-
-    }
+    expand(queries, number_of_queries, query_norm, maximum_norm, query_length, true);
 
     time_report_printf("Matching queries... ");
 
