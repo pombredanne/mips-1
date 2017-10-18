@@ -1,43 +1,23 @@
+#include "common.h"
+
+#include "faiss/utils.h"
+#include "faiss/Clustering.h"
+
 #include <iostream>
 #include <vector>
 #include <fstream>
 #include <string>
 #include <algorithm> 
 #include <numeric>  
-#include "faiss/utils.h"
-#include "faiss/Clustering.h"
 
 using namespace std;
 
+typedef FlatMatrix<float> FloatMatrix;
+
 struct kmeans_result {
-    vector<float> centroids;
-    vector<size_t> assigments;
+    FloatMatrix centroids;
+    vector<size_t> assignments;
 };
-
-vector<float> load_data(string filename, size_t* vec_cnt, size_t* dim_cnt) {
-    vector<float> data;
-    ifstream infile(filename);
-    size_t n, m;
-    infile >> n >> m;
-    cout << n << " " << m << endl;
-    for (size_t i = 0; i < n * m; i++) {
-        float tmp;
-        infile >> tmp;
-        data.push_back(tmp);
-    }
-    *vec_cnt = n;
-    *dim_cnt = m;
-    return data;
-}
-
-void print_data(vector<float> data, size_t n, size_t m) {
-    for (size_t i = 0; i < n; i++) {
-        for(size_t j = 0; j < m; j++) {
-            cout << data[i*m+j]<<" ";
-        }
-        cout<<endl;
-    }
-}
 
 vector<size_t> prepare_indices_vector(size_t m) {
     // TODO: Don't shuffle, but rotate randomly.
@@ -57,9 +37,9 @@ void print_vector(vector<T> vec) {
     cout << endl;
 }
 
-void print_parts(vector<vector<float>> data, size_t parts_cnt, size_t n, size_t m) {
-    for (size_t i = 0; i < parts_cnt;i++) {
-        print_data(data[i], n, m / parts_cnt);
+void print_parts(const vector<FloatMatrix>& parts) {
+    for (const auto& mat: parts) {
+        mat.print();
         cout << endl;
     }
 }
@@ -77,24 +57,22 @@ void apply_permutation(float* vec, vector<size_t> indices) {
     }
 }
 
-// TODO: Call it "subspace" and make class for storing matrix - different sizes!
-vector<vector<float>> make_parts(vector<float> data, int parts_number, size_t n, size_t m) {
-    vector<vector<float>> result(parts_number);
-    int length = m / parts_number;
-    for (size_t i = 0; i < n; i++) {
-        for (size_t j = 0; j < m; j++) {
-            result[j/length].push_back(data[i*m+j]);
+vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_count) {
+    vector<FloatMatrix> result(parts_count);
+    // Ceil division.
+    size_t len = (data.vector_length + parts_count - 1) / parts_count;
+    for (size_t i = 0; i < parts_count; i++) {
+        if (i != parts_count - 1) {
+            result[i].resize(data.vector_count(), len);
+        }
+        else {
+            result[i].resize(data.vector_count(), data.vector_length % len);
         }
     }
-    return result;
-}
-
-// TODO: same
-vector<vector<float>> make_query_parts(vector<float> query, int parts_number) {
-    int length = query.size() / parts_number;
-    vector<vector<float>> result(parts_number);
-    for(size_t i = 0; i < query.size(); i++) {
-        result[i/length].push_back(query[i]);
+    for (size_t vec = 0; vec < data.vector_count(); vec++) {
+        for (size_t ind = 0; ind < data.vector_length; ind++) {
+            result[ind / len].at(vec, ind % len) = data.at(vec, ind);
+        }
     }
     return result;
 }
@@ -115,25 +93,45 @@ void assign(float* vectors, size_t n, size_t d, size_t k, size_t* assignments, f
     }
 }
 
-void perform_kmeans(float* vectors, size_t n, size_t d, size_t k, size_t* assignments, float* centroids) {
-    faiss::kmeans_clustering(d, n, k, vectors, centroids);
-    assign(vectors, n, d, k, assignments, centroids);
+kmeans_result perform_kmeans(FloatMatrix& matrix, size_t k) {
+    kmeans_result kr;
+    kr.centroids.resize(k, matrix.vector_length);
+    kr.assignments.resize(matrix.vector_count());
+    faiss::kmeans_clustering(
+        matrix.vector_length, 
+        matrix.vector_count(), 
+        k, 
+        &matrix.at(0, 0), 
+        &kr.centroids.at(0, 0));
+    // TODO XXX
+    //assign(vectors, n, d, k, assignments, centroids);
+    return kr;
 }
 
-vector<float> build_table(size_t k, vector<kmeans_result> data, vector<vector<float>> query, size_t m) {
-    size_t length = m / data.size();
-    vector<float> table;
-    for (size_t i = 0; i < k; i++) {
-        for (size_t j = 0; j < data.size(); j++) {
-            // TODO: is this correct? I think it should be i*length or sth here.
-            float inner_product = faiss::fvec_inner_product(&data[j].centroids[i], query[j].data(), length);
-            table.push_back(inner_product);
+// Returns best guess of index of vector closest to query.
+size_t answer_query(
+        vector<kmeans_result>& kmeans, vector<FloatMatrix>& queries, size_t query_number) {
+
+    assert(kmeans.size() == queries.size());
+    assert(kmeans.size() > 0);
+    size_t parts_count = kmeans.size();
+    size_t centroids_count = kmeans[0].centroids.vector_count();
+
+    FloatMatrix table;
+    table.resize(parts_count, centroids_count);
+    for (size_t part = 0; part < parts_count; part++) {
+        size_t part_length = kmeans[part].centroids.vector_length;
+        assert(part_length == queries[part].vector_length);
+
+        for (size_t j = 0; j < centroids_count; j++) {
+            float product = faiss::fvec_inner_product(
+                    &kmeans[part].centroids.at(j, 0),
+                       &queries[part].at(query_number, 0),
+                       part_length);
+            table.at(part, j) = product;
         }
     }
-    return table;
-}
 
-int choose_vector_index(vector<float> inner_table, vector<kmeans_result> data, size_t k, size_t n) {
     vector<float> results;
     for (size_t i = 0; i < n; i++) {
         float partialResult = 0;
@@ -147,36 +145,34 @@ int choose_vector_index(vector<float> inner_table, vector<kmeans_result> data, s
 }
 
 int main_quantization() {
-    int parts_number=2;
-    size_t n,m;
-    size_t k = 1; // Centroid count.
-    vector<float> query = {2, 3, 4, 5, 6, 7, 8, 9};
-    vector<float> data = load_data("test.txt", &n, &m);
-    print_data(data, n, m);
-    vector<size_t> indices = prepare_indices_vector(8);
+    int parts_count=2;
+    size_t k = 3; // Centroid count.
+    FloatMatrix data = load_file<float>("input");
+    FloatMatrix queries = load_file<float>("queries");
+    data.print();
+    vector<size_t> indices = prepare_indices_vector(6);
     print_vector(indices);
-    for(size_t i = 0; i < n; i++) {
-        apply_permutation(&data[m*i], indices);
+
+    for (size_t i = 0; i < data.vector_count(); i++) {
+        apply_permutation(&data.at(i, 0), indices);
     }
-    apply_permutation(&query[0], indices);
-    cout << endl;
-    //print_data(data,n,m);
-    print_vector(query);
-    cout << endl;
-    vector<vector<float>> parts = make_parts(data, parts_number, n, m);
-    vector<vector<float>> query_parts = make_query_parts(query, parts_number);
-    //print_parts(parts,parts_number,n,m);
-    cout << endl;
-    print_parts(query_parts, parts_number, 1, m);
-    vector<kmeans_result> kmeans(parts_number);
-    for(int i = 0; i < parts_number; i++) {
-        kmeans[i].centroids = vector<float>(k*m);
-        kmeans[i].assigments = vector<size_t>(n);
-        perform_kmeans(parts[i].data(), n, m, k, kmeans[i].assigments.data(), kmeans[i].centroids.data());
+    for (size_t i = 0; i < queries.vector_count(); i++) {
+        apply_permutation(&queries.at(i, 0), indices);
     }
-    vector<float>query_table = build_table(k, kmeans, query_parts, m);
-    print_data(query_table, k, parts_number);
-    cout << endl;
-    cout << choose_vector_index(query_table, kmeans, k, n);
+
+    auto parts = make_parts(data, parts_count);
+    auto query_parts = make_parts(queries, parts_count);
+
+    print_parts(query_parts);
+    vector<kmeans_result> kmeans(parts_count);
+    for(int i = 0; i < parts_count; i++) {
+        kmeans[i] = perform_kmeans(parts[i], k);
+    }
+    std::cout << "Preprocessing phase finished." << std::endl;
+
+    for (size_t q = 0; q < queries.vector_count(); q++) {
+        std::cout << "Query " << q << std::endl;
+        cout << answer_query(kmeans, query_parts, q) << endl;
+    }
     return 0;
 }

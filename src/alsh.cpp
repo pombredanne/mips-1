@@ -92,7 +92,7 @@ float euclidean_norm(vector<float>& vec) {
 }
 
 float max_value(vector<float>& vec) {
-	float maximum = numeric_limits<float>::min();
+    float maximum = numeric_limits<float>::min();
     for (auto v_i: vec) {
         if (v_i > maximum) {
             maximum = v_i;

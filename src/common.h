@@ -6,14 +6,23 @@
 #include <string>
 
 
+template <typename T>
 struct FlatMatrix {
-	std::vector<float> data;
-	size_t vector_length;
+    std::vector<T> data;
+    size_t vector_length;
 
-	size_t vector_count() const;
+    T& at(size_t vec, size_t ind);
+    T at(size_t vec, size_t ind) const;
+    size_t vector_count() const;
+    void print() const;
+    void resize(size_t cnt, size_t dim);
 };
 
-FlatMatrix load_file(std::string filename);
 
+template <typename T>
+FlatMatrix<T> load_file(std::string filename);
+
+
+#include "common.inc.h"
 
 #endif
