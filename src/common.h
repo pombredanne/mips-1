@@ -13,6 +13,7 @@ struct FlatMatrix {
 
     T& at(size_t vec, size_t ind);
     T at(size_t vec, size_t ind) const;
+    T* row(size_t num);
     size_t vector_count() const;
     void print() const;
     void resize(size_t cnt, size_t dim);

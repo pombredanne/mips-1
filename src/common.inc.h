@@ -43,6 +43,11 @@ void FlatMatrix<T>::print() const {
 }
 
 template <typename T>
+T* FlatMatrix<T>::row(size_t num) {
+    return &at(num, 0);
+}
+
+template <typename T>
 void FlatMatrix<T>::resize(size_t cnt, size_t dim) {
     data.resize(cnt * dim);
     vector_length = dim;

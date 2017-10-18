@@ -90,8 +90,9 @@ kmeans_result perform_kmeans(FloatMatrix& matrix, size_t k) {
         matrix.vector_length, 
         matrix.vector_count(), 
         k, 
-        &matrix.at(0, 0), 
-        &kr.centroids.at(0, 0));
+        matrix.data.data(), 
+        kr.centroids.data.data()
+    );
 
     cout << "Centroids calculated." << endl;
     kr.centroids.print();
@@ -106,8 +107,8 @@ kmeans_result perform_kmeans(FloatMatrix& matrix, size_t k) {
 
         for (size_t c = 0; c < k; c++) {
             float dist = faiss::fvec_L2sqr(
-                    &matrix.at(i, 0), 
-                    &kr.centroids.at(c, 0),
+                    matrix.row(i), 
+                    kr.centroids.row(c),
                     matrix.vector_length);
             if (dist < best) {
                 kr.assignments[i] = c;
@@ -136,8 +137,8 @@ size_t answer_query(
 
         for (size_t j = 0; j < centroid_count; j++) {
             float product = faiss::fvec_inner_product(
-                    &kmeans[part].centroids.at(j, 0),
-                    &queries[part].at(query_number, 0),
+                    kmeans[part].centroids.row(j),
+                    queries[part].row(query_number),
                     part_length);
             table.at(part, j) = product;
         }
@@ -179,10 +180,10 @@ int main_quantization() {
     print_vector(permutation);
 
     for (size_t i = 0; i < data.vector_count(); i++) {
-        apply_permutation(&data.at(i, 0), permutation);
+        apply_permutation(data.row(i), permutation);
     }
     for (size_t i = 0; i < queries.vector_count(); i++) {
-        apply_permutation(&queries.at(i, 0), permutation);
+        apply_permutation(queries.row(i), permutation);
     }
     std::cout << "Permuted data:\n";
     data.print();
