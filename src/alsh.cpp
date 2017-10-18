@@ -121,7 +121,7 @@ vector<vector<float>> load_db(string fname,
 
     printf("Setting up data structures...\t");
 
-    vector<vector<float> > db((uint64_t) number_of_vectors);
+    vector<vector<float> > db(*number_of_vectors);
 
     for (int i = 0; i < *number_of_vectors; i++) {
         db[i].resize(*vector_length + 2*m);
@@ -132,6 +132,7 @@ vector<vector<float>> load_db(string fname,
             fscanf(database, "%f", &db[i][j]);
         }
     }
+    printf("Done...\t");
     fclose(database);
 
     return db;
