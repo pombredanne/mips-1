@@ -318,23 +318,22 @@ vector<T> load_vecs (const char* fname, size_t& d, size_t& n, size_t m){
 // ---------------------------------------------------------------------------------------------------------------------
 // Main
 
-int main(int argc, char* argv[]) {
+void main_kmeans() {
     char* input_file;
     char* query_file;
     vector<float> vectors, vectors_copy, queries;
     size_t d, dq, n, nq, m, L, P;  // vector dim, query vec dim, num vectors, n queries, num components, num layers
 
-    if(argc != 7){
-        LOG("Bad usage!");
-        return -1;
-    }
 
+	// TODO: FIX API!!
+	/*
     input_file = argv[1];
     query_file = argv[2];
     m          = atoi(argv[3]);
     L          = atoi(argv[4]);
     P          = atoi(argv[5]);
     VERBOSE    = (bool) atoi(argv[6]);
+	*/
 
     bool FRANKOWY = 0;
 
@@ -372,7 +371,7 @@ int main(int argc, char* argv[]) {
     }
     printf("\n");
     if(FRANKOWY){
-        return 0;
+        return;
     }
     printf("Checking against ground truth\n");
     for(size_t i = 0; i < nq; i++){
@@ -388,6 +387,4 @@ int main(int argc, char* argv[]) {
         }
         printf("Rank for query %zu: %zu\n", i, rank);
     }
-
-    return 0;
 }

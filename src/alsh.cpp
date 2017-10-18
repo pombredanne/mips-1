@@ -136,7 +136,7 @@ vector<vector<float>> load_db(string fname,
 }
 
 
-int main() {
+void main_alsh() {
     omp_set_num_threads(4);
 
     size_t number_of_vectors;

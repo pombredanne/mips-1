@@ -146,7 +146,7 @@ int choose_vector_index(vector<float> inner_table, vector<kmeans_result> data, s
     return distance(results.begin(), max);
 }
 
-int main() {
+int main_quantization() {
     int parts_number=2;
     size_t n,m;
     size_t k = 1; // Centroid count.
