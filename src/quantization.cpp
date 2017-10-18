@@ -1,6 +1,3 @@
-// MIPS_Quantization.cpp : Defines the entry point for the console application.
-//
-
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -17,7 +14,7 @@ struct kmeans_result {
 	vector<size_t> assigments;
 };
 
-vector<float> load_data(string filename, int *n, int *m) {//numberOfVectors, lengthOfVector
+vector<float> load_data(string filename, size_t *n, size_t *m) {//numberOfVectors, lengthOfVector
 	vector<float> data;
 	ifstream infile(filename);
 	infile >> *n >> *m;
@@ -57,13 +54,13 @@ void print_vector(vector<size_t> vec) {
 	cout << endl;
 }
 
-void print_vectorF(vector<float> vec) {
+void print_vector(vector<float> vec) {
 	for (auto& val: vec) {
 		cout << val << " ";
 	}
 	cout << endl;
 }
-void print_parts(vector<vector<float> >  data, int parts_number, int n, int m) {
+void print_parts(vector<vector<float> >  data, int parts_number, size_t n, size_t m) {
 	for (int i = 0;i<parts_number;i++) {
 		print_data(data[i],n,m/parts_number);
 		cout << endl;
@@ -83,15 +80,25 @@ void apply_permutation(float* vec, vector<size_t> indices) {
 	}
 }
 
-vector<vector<float> >  make_parts(vector<float> data, int numberOfParts, int n, int m) {
-	vector<vector<float> > result(numberOfParts);
-	int length = m / numberOfParts;
+vector<vector<float> >  make_parts(vector<float> data, int parts_number, size_t n, size_t m) {
+	vector<vector<float> > result(parts_number);
+	int length = m / parts_number;
 	for (size_t i = 0; i < n; i++) {
 		for (size_t j = 0; j < m; j++) {
 			result[j/length].push_back(data[i*m+j]);
 		}
 	}
 	return result;
+}
+vector<vector<float> >  make_query_parts(vector<float> query, int parts_number)
+{
+    int length = query.size() / parts_number;
+    vector<vector<float> > result(parts_number);
+    for(size_t i = 0;i<query.size();i++)
+    {
+        result[i/length].push_back(query[i]);
+    }
+    return result;
 }
 
 void assign(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
@@ -113,62 +120,65 @@ void perform_kmeans(float *vectors, size_t n, size_t d, size_t k, size_t *assign
 	assign(vectors, n, d, k, assignments, centroids);
 }
 
-//vector<vector<float> > build_table(
-//		int numberOfCentroids, vector<kmeans_result> data, vector<vector<int> > query) {
-//	vector<vector<float> > table;
-//	for (int i = 0; i < numberOfCentroids; i++) {
-//		vector<float>tmpVector;
-//		for (size_t j = 0; j < data.size(); j++) {
-//			int innerProduct = inner_product(data[j].centroids[i].begin(), data[j].centroids[i].end(), query[j].begin(), 0.0);
-//			tmpVector.push_back(innerProduct);
-//		}
-//		table.push_back(tmpVector);
-//		tmpVector.clear();
-//	}
-//	return table;
-//}
-//
-//int choose_vector_index(vector<vector<float> > innerTable, vector<kmeans_result> data) {
-//	vector<float> results;
-//	for (size_t i = 0; i < data[0].assignedCentroids.size(); i++) {
-//		int partialResult = 0;
-//		for (size_t j = data.size(); j < data.size(); j++) {
-//			partialResult += innerTable[data[j].assignedCentroids[i]][j];
-//		}
-//		results.push_back(partialResult);
-//	}
-//	vector<float>::iterator max = max_element(results.begin(), results.end());
-//	return distance(results.begin(), max);
-//}
+vector<float>  build_table(size_t k, vector<kmeans_result> data, vector<vector<float>> query, size_t m) {
+    size_t length = m/data.size();
+	vector<float>  table;
+	for (size_t i = 0; i < k; i++) {
+		for (size_t j = 0; j < data.size(); j++) {
+            float inner_product = faiss::fvec_inner_product(&data[j].centroids[i],query[j].data(),length);
+			table.push_back(inner_product);
+		}
+	}
+	return table;
+}
+
+int choose_vector_index(vector<float>  inner_table, vector<kmeans_result> data, size_t k, size_t n) {
+	vector<float> results;
+	for (size_t i = 0; i < n; i++) {
+		float partialResult = 0;
+		for (size_t j = 0; j < data.size(); j++) {
+			partialResult += inner_table[data[j].assigments[i]*k+j];
+		}
+		results.push_back(partialResult);
+	}
+	vector<float>::iterator max = max_element(results.begin(), results.end());
+	return distance(results.begin(), max);
+}
 
 int main() {
-	int n,m;
+	int parts_number=2;
+	size_t n,m;
+	size_t k = 1; //liczba centroidów
+	vector<float> query = {2,3,4,5,6,7,8,9};
 	vector<float> data = load_data("test.txt",&n,&m);
 	print_data(data,n,m);
 	vector<size_t> indices = prepare_indices_vector(8);
 	print_vector(indices);
-	for(int i = 0; i<n;i++)
+	for(size_t i = 0; i<n;i++)
 	{
 		apply_permutation(&data[m*i], indices);
 	}
+    apply_permutation(&query[0], indices);
 	cout << endl;
-	print_data(data,n,m);
+	//print_data(data,n,m);
+    print_vector(query);
 	cout << endl;
-	int numberOfParts=2;
-	vector<vector<float> >  parts = make_parts(data,numberOfParts,n,m);
-	//perform_kmeans(parts[0],)
-	print_parts(parts,numberOfParts,n,m);
-	vector<kmeans_result> kmeans(numberOfParts);
-	for(int i=0;i<numberOfParts;i++)
+	vector<vector<float> >  parts = make_parts(data,parts_number,n,m);
+    vector<vector<float> > query_parts = make_query_parts(query,parts_number);
+	//print_parts(parts,parts_number,n,m);
+    cout<<endl;
+    print_parts(query_parts,parts_number,1,m);
+	vector<kmeans_result> kmeans(parts_number);
+	for(int i=0;i<parts_number;i++)
 	{
-		int k = 2; //liczba centroidów
-
 		kmeans[i].centroids = vector<float>(k*m);
 		kmeans[i].assigments = vector<size_t>(n);
 		perform_kmeans(parts[i].data(),n,m,k,kmeans[i].assigments.data(), kmeans[i].centroids.data());
-		print_vectorF(kmeans[i].centroids);
-		print_vector(kmeans[i].assigments);
 	}
+	vector<float>query_table = build_table(k,kmeans,query_parts,m);
+	print_data(query_table,k,parts_number);
+    cout<<endl;
+    cout<<choose_vector_index(query_table,kmeans,k,n);
 	return 0;
 }
 
