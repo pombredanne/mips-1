@@ -1,7 +1,7 @@
 
 LIBS=-Lfaiss -lfaiss -lopenblas
 
-COMPILE=g++ -O2 -I. -Wall -Wextra -std=c++11 -fopenmp
+COMPILE=g++ -O2 -I. -Wall -Wextra -std=c++11 -fopenmp -Wno-unused-result
 
 all: dirs bin/quantization bin/alsh
 
