@@ -1,3 +1,8 @@
+#include "common.h"
+
+#include "faiss/utils.h"
+#include "faiss/Clustering.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
@@ -5,8 +10,6 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
-#include "faiss/utils.h"
-#include "faiss/Clustering.h"
 
 using namespace std;
 
@@ -16,16 +19,18 @@ using namespace std;
 #define LOG(msg, ...) if(VERBOSE) { printf("\n" msg "\n", ##__VA_ARGS__); }
 bool VERBOSE = true;
 
+typedef FlatMatrix<float> FloatMatrix;
+
 struct layer_t {
-    vector<size_t> assignments; // Centroid number to which ith vector is assigned.
-    vector<float> centroids;
+	kmeans_result kr;
     size_t cluster_num;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Utilities
 
-vector<float> load_data(const char *filename, size_t& d, size_t& n, size_t m) {
+FloatMatrix load_data(const char *filename, size_t m) {
+	size_t cnt, dim;
     FILE *input;
     input = fopen(filename, "r");
     if (input == NULL) {
@@ -33,46 +38,37 @@ vector<float> load_data(const char *filename, size_t& d, size_t& n, size_t m) {
         exit(EXIT_FAILURE);
     }
 
-    if(!fscanf(input, "%zu", &n)){
+    if(!fscanf(input, "%zu", &cnt)){
         printf("Bad input file format.");
         exit(EXIT_FAILURE);
     }
-    if(!fscanf(input, "%zu", &d)){
+    if(!fscanf(input, "%zu", &dim)){
         printf("Bad input file format.");
         exit(EXIT_FAILURE);
     }
-    d += m; // Extending here.
+    dim += m; // Extending here.
 
-    vector<float> vectors(n * d);
-    for (size_t i = 0; i < n; i++) {
-        for (size_t j = 0; j < d - m; j++) {
-            if(!fscanf(input, "%f", &vectors[j + (i * d)])){
+	FloatMatrix result;
+	result.resize(cnt, dim);
+
+    for (size_t i = 0; i < cnt; i++) {
+        for (size_t j = 0; j < dim - m; j++) {
+            if(!fscanf(input, "%f", &result.at(i, j))){
                 printf("Bad input file format.");
                 exit(EXIT_FAILURE);
             }
         }
-        for (size_t j = d - m; j < d; j++){
-            vectors[j + (i * d)] = 0.0;
+        for (size_t j = dim - m; j < dim; j++){
+            result.at(i, j) = 0.0;
         }
     }
     fclose(input);
 
-    return vectors;
+    return result;
 }
 
 inline bool comp(const pair<size_t, float> &a, const pair<size_t, float> &b) {
     return (a.second > b.second);
-}
-
-void print_centroids(layer_t &layer, size_t d) {
-    printf("centroids' coordinates:\n");
-    for (size_t i = 0; i < layer.cluster_num; i++) {
-        printf("%zu: [ ", i);
-        for (size_t j = 0; j < d; j++) {
-            printf("%f ", layer.centroids[i * d + j]);
-        }
-        printf("]\n");
-    }
 }
 
 void print_query(vector<float>& queries, size_t i, size_t d) {
@@ -102,33 +98,33 @@ inline void scale_(float* vec, float alpha, size_t size) {
 // ---------------------------------------------------------------------------------------------------------------------
 // Vectors
 
-void normalize_(vector<float>& vectors, size_t n, size_t d) {
+void normalize_(FloatMatrix& matrix) {
     float max_norm = 0;
 
-    for (size_t i = 0; i < n; i++) {
-        float norm = fvec_norm_L2(vectors.data() + (i * d), d);
+    for (size_t i = 0; i < matrix.vector_count(); i++) {
+        float norm = fvec_norm_L2(matrix.row(i), matrix.vector_length);
         max_norm = norm > max_norm ? norm : max_norm;
     }
 
-    for (size_t i = 0; i < n; i++) {
-        scale_(vectors.data() + (i*d), max_norm, d);
+    for (size_t i = 0; i < matrix.vector_count(); i++) {
+        scale_(matrix.row(i), max_norm, matrix.vector_length);
     }
 }
 
-void expand_(vector<float>& vectors, size_t n, size_t d, size_t m) {
-    for (size_t i = 0; i < n; i++) {
-        float norm = fvec_norm_L2(vectors.data() + (i * d), d);
-        for (size_t j = d - m; j < d; j++) {
+void expand_(FloatMatrix& matrix, size_t m) {
+    for (size_t i = 0; i < matrix.vector_count(); i++) {
+        float norm = fvec_norm_L2(matrix.row(i), matrix.vector_length);
+        for (size_t j = matrix.vector_length - m; j < matrix.vector_length; j++) {
             norm *= norm;
-            vectors[i * d + j] = 0.5 - norm;
+            matrix.at(i, j) = 0.5 - norm;
         }
     }
 }
 
-void expand_queries_(vector<float> &queries, size_t n, size_t d, size_t m) {
-    for (size_t i = 0; i < n; i++) {
-        for (size_t j = d - m; j < d; j++) {
-            queries[i * d + j] = 0.f;
+void expand_queries_(FloatMatrix& matrix, size_t m) {
+    for (size_t i = 0; i < matrix.vector_count(); i++) {
+        for (size_t j = matrix.vector_length - m; j < matrix.vector_length; j++) {
+            matrix.at(i, j) = 0.f;
         }
     }
 }
@@ -179,56 +175,57 @@ void k_means_clustering_(float *vectors, size_t n, size_t d, size_t k, size_t *a
     }
 }
 
-vector<layer_t> train(vector<float>& vectors, size_t n, size_t d, size_t L) {
+vector<layer_t> train(FloatMatrix& vectors, size_t L) {
     vector<layer_t> layers = vector<layer_t>(L);
 
     for (size_t layer_id = 0; layer_id < L; layer_id++) {
         LOG("layer = %zu", layer_id);
 
         // Compute number of clusters and cluster size on this layer.
-        size_t cluster_size = (size_t) floor(pow(n, (float) (layer_id + 1) / (float) (L+1)));
-        layers[layer_id].cluster_num = (size_t) floor((float) n / (float) cluster_size);
+        size_t cluster_size = floor(
+				pow(vectors.vector_count(), (layer_id + 1) / (float) (L + 1)));
+
+        layers[layer_id].cluster_num = floor(
+				vectors.vector_count() / (float) cluster_size);
 
         LOG("cluster_num = %zu", layers[layer_id].cluster_num);
 
-        size_t n_points = (layer_id == 0) ? n : layers[layer_id - 1].cluster_num;
-        float *points = (layer_id == 0) ? vectors.data() : layers[layer_id - 1].centroids.data();
+        FloatMatrix& points = (layer_id == 0) ?
+		   	vectors : layers[layer_id - 1].kr.centroids;
 
-        layers[layer_id].assignments = vector<size_t>(n_points);
-        layers[layer_id].centroids = vector<float>(layers[layer_id].cluster_num * d);
+		layers[layer_id].kr = perform_kmeans(points, layers[layer_id].cluster_num);
 
-        // Cluster.
-        k_means_clustering_(points, n_points, d, layers[layer_id].cluster_num,
-                layers[layer_id].assignments.data(), layers[layer_id].centroids.data());
-
-        if (VERBOSE)
-            print_centroids(layers[layer_id], d);
+        if (VERBOSE) {
+			std::cout << "Centroids in layer " << layer_id << std::endl;
+			layers[layer_id].kr.centroids.print();
+		}
     }
 
     return layers;
 }
 
-size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vectors, vector<float>& vectors_copy,
-        size_t P, size_t L, size_t d, size_t n) {
+size_t predict(vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
+		size_t opened_trees, FloatMatrix& vectors) {
 
     // All centroids on the (L-1)th layer should be checked.
-    size_t k = layers[layers.size() - 1].cluster_num;
-    vector<size_t> candidates(k);
+    vector<size_t> candidates;
 
-    for (size_t i = 0; i < candidates.size(); i++) {
-        candidates[i] = i;
+    for (size_t i = 0; i < layers.back().cluster_num; i++) {
+        candidates.push_back(i);
     }
 
-    for (size_t layer_id = L - 1; layer_id != (size_t)(-1); layer_id--) {
+    for (size_t layer_id = layers.size() - 1; layer_id != (size_t)(-1); layer_id--) {
         LOG("layer = %zu", layer_id)
 
-            vector<std::pair<size_t, float> > best_centroids;
-        // Multiply previously marked centroids with the query.
+		vector<std::pair<size_t, float>> best_centroids;
         for (size_t i = 0; i < candidates.size(); i++) {
             size_t c = candidates[i];
-            float result = faiss::fvec_inner_product(query_vector, layers[layer_id].centroids.data() + c * d, d);
-            best_centroids.push_back(std::make_pair(c, result));
+            float result = faiss::fvec_inner_product(
+					queries.row(qnum), 
+					layers[layer_id].kr.centroids.row(c),
+					queries.vector_length);
 
+            best_centroids.push_back({c, result});
             LOG("centroid %zu: result %f", c, result);
         }
 
@@ -236,7 +233,7 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
         sort(best_centroids.begin(), best_centroids.end(), comp);
         if (VERBOSE) {
             printf("best_centroids:\n");
-            for (size_t i = 0; i < best_centroids.size() && i < P; i++) {
+            for (size_t i = 0; i < best_centroids.size() && i < opened_trees; i++) {
                 cout << best_centroids[i].first << " " << best_centroids[i].second << endl;
             }
         }
@@ -249,13 +246,16 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
                 printf("candidate set (CL): ");
             }
         }
-        size_t num_points = (layer_id == 0) ? n : layers[layer_id - 1].cluster_num;
+
+        size_t num_points = (layer_id == 0) ?
+		   	vectors.vector_count() : layers[layer_id - 1].cluster_num;
         LOG("np: %zu", num_points);
         candidates.clear();
         // Mark centroids to be checked at next layer.
+		// TODO: Check this carefully - dumb or wrong.
         for (size_t i = 0; i < num_points; i++) {
-            for (size_t j = 0; j < P && j < best_centroids.size(); j++) {
-                if (layers[layer_id].assignments[i] == best_centroids[j].first) {
+            for (size_t j = 0; j < opened_trees && j < best_centroids.size(); j++) {
+                if (layers[layer_id].kr.assignments[i] == best_centroids[j].first) {
                     candidates.push_back(i);
                     if (VERBOSE) { printf("%zu ", i); }
                     break;
@@ -267,11 +267,14 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
     }
     // Last layer - find best match.
     size_t best_result = -1;
-    float maximum_result = -1;
+    float maximum_result = numeric_limits<float>::min();
     bool maximum_initialized = false;
     for (size_t i = 0; i < candidates.size(); i++) {
         size_t c = candidates[i];
-        float result = faiss::fvec_inner_product(query_vector, vectors.data() + c * d, d);
+        float result = faiss::fvec_inner_product(
+				queries.row(qnum),
+			   	vectors.row(c),
+			   	vectors.vector_length);
         if (!maximum_initialized) {
             maximum_initialized = true;
             maximum_result = result;
@@ -281,12 +284,7 @@ size_t predict(float *query_vector, vector<layer_t>& layers, vector<float>& vect
             best_result = c;
         }
     }
-    printf("best result = %zu : [", best_result);
-    for (size_t i = 0; i < d; i++) {
-        // Printing vector before transformations, to see the one after transformations use 'vectors'.
-        printf("%f ", *(vectors_copy.data() + best_result * d + i));
-    }
-    printf("] inner product = %f\n", maximum_result);
+    printf("Vector %zu, inner product = %f\n", best_result, maximum_result);
     return best_result;
 }
 
@@ -315,76 +313,39 @@ vector<T> load_vecs (const char* fname, size_t& d, size_t& n, size_t m){
     return v;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
-// Main
-
 void main_kmeans() {
-    char* input_file;
-    char* query_file;
-    vector<float> vectors, vectors_copy, queries;
-    size_t d, dq, n, nq, m, L, P;  // vector dim, query vec dim, num vectors, n queries, num components, num layers
+    const char* input_file;
+    const char* query_file;
+    size_t m, L;
+	size_t opened_trees = 2;
 
+	input_file = "input";
+	query_file = "queries";
+	m = 3;
+	L = 2;
+	VERBOSE = 0;
 
-	// TODO: FIX API!!
-	/*
-    input_file = argv[1];
-    query_file = argv[2];
-    m          = atoi(argv[3]);
-    L          = atoi(argv[4]);
-    P          = atoi(argv[5]);
-    VERBOSE    = (bool) atoi(argv[6]);
-	*/
+	auto vectors = load_data(input_file, m);
+    auto vectors_copy = vectors;
 
-    bool FRANKOWY = 0;
+    normalize_(vectors);
+    expand_(vectors, m);
 
-    if(!FRANKOWY){
-        vectors = load_vecs<float>(input_file, d, n, m);
-    }
-    else{
-        vectors = load_data(input_file, d, n, m);
-    }
-    vectors_copy = vectors;
+    vector<layer_t> layers = train(vectors, L);
 
-    normalize_(vectors, n, d);
-    expand_(vectors, n, d, m);
+	auto queries = load_data(query_file, m);
+    expand_queries_(queries, m);
 
-    vector<layer_t> layers = train(vectors, n, d, L);
-
-    if(!FRANKOWY){
-        queries = load_vecs<float>(query_file, dq, nq, m);
-    }
-    else{
-        queries = load_data(query_file, dq, nq, m);
-    }
-    expand_queries_(queries, nq, dq, m);
-    assert(dq == d and "Queries and Vectors dimension mismatch!");
+    assert(vectors.vector_length == queries.vector_length and
+		   	"Queries and Vectors dimension mismatch!");
 
     vector<int> predictions;
-    for (size_t i = 0; i < nq; i++) {
-        if (VERBOSE)
-            print_query(queries, i, d);
+    for (size_t i = 0; i < queries.vector_count(); i++) {
+		std::cout << "Query " << i << std::endl;
 
-        float* q = queries.data() + (i*d);
-        size_t res = predict(q, layers, vectors, vectors_copy,
-                P, L, d, n);
+        size_t res = predict(layers, queries, i, opened_trees, vectors);
         predictions.push_back(res);
+		printf("%zu\n", res);
     }
     printf("\n");
-    if(FRANKOWY){
-        return;
-    }
-    printf("Checking against ground truth\n");
-    for(size_t i = 0; i < nq; i++){
-        float inner_with_chosen = faiss::fvec_inner_product(vectors_copy.data() + predictions[i] * d,
-                queries.data() + i * d, d - m);
-        size_t rank = 0;
-        for (size_t j = 0; j < n; j++) {
-            float inner_with_other = faiss::fvec_inner_product(vectors_copy.data() + j * d,
-                    queries.data() + i * d, d - m);
-            if (inner_with_other > inner_with_chosen) {
-                rank++;
-            }
-        }
-        printf("Rank for query %zu: %zu\n", i, rank);
-    }
 }

@@ -14,11 +14,6 @@ using namespace std;
 
 typedef FlatMatrix<float> FloatMatrix;
 
-struct kmeans_result {
-    FloatMatrix centroids;
-    vector<size_t> assignments;
-};
-
 vector<size_t> prepare_permutation(size_t m) {
     // TODO: Don't shuffle, but rotate randomly.
     // TODO: Also, probably use some better source of randomness.
@@ -79,44 +74,6 @@ vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_count) {
         }
     }
     return result;
-}
-
-kmeans_result perform_kmeans(FloatMatrix& matrix, size_t k) {
-    kmeans_result kr;
-    kr.centroids.resize(k, matrix.vector_length);
-    kr.assignments.resize(matrix.vector_count());
-
-    faiss::kmeans_clustering(
-        matrix.vector_length, 
-        matrix.vector_count(), 
-        k, 
-        matrix.data.data(), 
-        kr.centroids.data.data()
-    );
-
-    cout << "Centroids calculated." << endl;
-    kr.centroids.print();
-
-    // TODO: I think the assignments could be somehow taken out from faiss
-    // - it stores them while computing centroids anyway. I don't see any API
-    // to do that though...
-    
-    // Brute force assignment - for each vector, find closest centroid.
-    for (size_t i = 0; i < matrix.vector_count(); i++) {
-        float best = numeric_limits<float>::max();
-
-        for (size_t c = 0; c < k; c++) {
-            float dist = faiss::fvec_L2sqr(
-                    matrix.row(i), 
-                    kr.centroids.row(c),
-                    matrix.vector_length);
-            if (dist < best) {
-                kr.assignments[i] = c;
-                best = dist;
-            }
-        }
-    }
-    return kr;
 }
 
 // Returns best guess of index of vector closest to query.

@@ -24,6 +24,14 @@ template <typename T>
 FlatMatrix<T> load_file(std::string filename);
 
 
+struct kmeans_result {
+    FlatMatrix<float> centroids;
+	std::vector<size_t> assignments;
+};
+
+kmeans_result perform_kmeans(FlatMatrix<float>& matrix, size_t k);
+
+
 #include "common.inc.h"
 
 #endif
