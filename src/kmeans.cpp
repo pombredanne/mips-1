@@ -13,257 +13,124 @@
 
 using namespace std;
 
-// ---------------------------------------------------------------------------------------------------------------------
-// MISC
-
-#define LOG(msg, ...) if(VERBOSE) { printf("\n" msg "\n", ##__VA_ARGS__); }
-bool VERBOSE = true;
-
-typedef FlatMatrix<float> FloatMatrix;
-
 struct layer_t {
-	kmeans_result kr;
+    kmeans_result kr;
+    vector<vector<size_t>> centroid_children;
     size_t cluster_num;
 };
 
-// ---------------------------------------------------------------------------------------------------------------------
-// Utilities
+float fvec_norm_L2(const float *vec, size_t size) {
+    return sqrt(faiss::fvec_norm_L2sqr(vec, size));
+}
 
-FloatMatrix load_data(const char *filename, size_t m) {
-	size_t cnt, dim;
-    FILE *input;
-    input = fopen(filename, "r");
-    if (input == NULL) {
-        printf("Couldn't open input file.\n");
-        exit(EXIT_FAILURE);
-    }
+// TODO: Maybe use the shorter extension with square root?
+FloatMatrix normalize_and_expand_vectors(const FloatMatrix& matrix, size_t m) {
+    FloatMatrix result;
+    result.resize(matrix.vector_count(), matrix.vector_length + m);
 
-    if(!fscanf(input, "%zu", &cnt)){
-        printf("Bad input file format.");
-        exit(EXIT_FAILURE);
-    }
-    if(!fscanf(input, "%zu", &dim)){
-        printf("Bad input file format.");
-        exit(EXIT_FAILURE);
-    }
-    dim += m; // Extending here.
-
-	FloatMatrix result;
-	result.resize(cnt, dim);
-
-    for (size_t i = 0; i < cnt; i++) {
-        for (size_t j = 0; j < dim - m; j++) {
-            if(!fscanf(input, "%f", &result.at(i, j))){
-                printf("Bad input file format.");
-                exit(EXIT_FAILURE);
-            }
-        }
-        for (size_t j = dim - m; j < dim; j++){
-            result.at(i, j) = 0.0;
+    for (size_t i = 0; i < matrix.vector_count(); i++) {
+        for (size_t j = 0; j < matrix.vector_length; j++) {
+            result.at(i, j) = matrix.at(i, j);
         }
     }
-    fclose(input);
+
+    float max_norm = 0;
+
+    for (size_t i = 0; i < result.vector_count(); i++) {
+        float norm = fvec_norm_L2(result.row(i), result.vector_length);
+        max_norm = norm > max_norm ? norm : max_norm;
+    }
+
+    for (size_t i = 0; i < result.vector_count(); i++) {
+        scale(result.row(i), max_norm, result.vector_length);
+    }
+
+    for (size_t i = 0; i < result.vector_count(); i++) {
+        float norm = fvec_norm_L2(result.row(i), result.vector_length);
+        for (size_t j = matrix.vector_length; j < result.vector_length; j++) {
+            norm *= norm;
+            result.at(i, j) = 0.5 - norm;
+        }
+    }
 
     return result;
 }
 
-inline bool comp(const pair<size_t, float> &a, const pair<size_t, float> &b) {
-    return (a.second > b.second);
-}
-
-void print_query(vector<float>& queries, size_t i, size_t d) {
-    printf("\n--------------------------------------");
-    printf("\nquery %zu = [ ", i);
-    for (size_t j = 0; j < d; j++) {
-        printf("%f ", *(queries.data() + i * d + j));
-    }
-    printf("] ");
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Linear Algebra
-
-inline float fvec_norm_L2(float *vec, size_t size) {
-    float sqr = faiss::fvec_norm_L2sqr(vec, size);
-
-    return sqrt(sqr);
-}
-
-inline void scale_(float* vec, float alpha, size_t size) {
-    for (size_t i = 0; i < size; i++) {
-        vec[i] /= alpha;
-    }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Vectors
-
-void normalize_(FloatMatrix& matrix) {
-    float max_norm = 0;
+FloatMatrix expand_queries(const FloatMatrix& matrix, size_t m) {
+    FloatMatrix result;
+    result.resize(matrix.vector_count(), matrix.vector_length + m);
 
     for (size_t i = 0; i < matrix.vector_count(); i++) {
-        float norm = fvec_norm_L2(matrix.row(i), matrix.vector_length);
-        max_norm = norm > max_norm ? norm : max_norm;
+        for (size_t j = 0; j < matrix.vector_length; j++) {
+            result.at(i, j) = matrix.at(i, j);
+        }
+        for (size_t j = matrix.vector_length; j < result.vector_length; j++) {
+            result.at(i, j) = 0.f;
+        }
     }
-
-    for (size_t i = 0; i < matrix.vector_count(); i++) {
-        scale_(matrix.row(i), max_norm, matrix.vector_length);
-    }
+    return result;
 }
 
-void expand_(FloatMatrix& matrix, size_t m) {
-    for (size_t i = 0; i < matrix.vector_count(); i++) {
-        float norm = fvec_norm_L2(matrix.row(i), matrix.vector_length);
-        for (size_t j = matrix.vector_length - m; j < matrix.vector_length; j++) {
-            norm *= norm;
-            matrix.at(i, j) = 0.5 - norm;
-        }
-    }
-}
-
-void expand_queries_(FloatMatrix& matrix, size_t m) {
-    for (size_t i = 0; i < matrix.vector_count(); i++) {
-        for (size_t j = matrix.vector_length - m; j < matrix.vector_length; j++) {
-            matrix.at(i, j) = 0.f;
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Clustering
-
-void assign_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
-    for (size_t i=0; i<n; i++) {
-        float best = numeric_limits<float>::max();
-        float dist = 0;
-
-        for (size_t j=0; j<k; j++) {
-            dist = faiss::fvec_inner_product(vectors + (i*d), centroids + (j*d), d);
-            if (best > dist) {
-                assignments[i] = j;
-                best = dist;
-            }
-        }
-    }
-}
-
-void k_means_clustering_(float *vectors, size_t n, size_t d, size_t k, size_t *assignments, float *centroids) {
-    faiss::kmeans_clustering(d, n, k, vectors, centroids);
-    for(size_t i = 0; i < k; i++){
-        LOG("Cluster %zu [", i);
-        for(size_t j = 0; j < d; j++){
-            printf("%f ", centroids[d*i+j]);
-        }
-    }
-    assign_(vectors, n, d, k, assignments, centroids);
-    LOG("Clustering %zu points into %zu centroids", n, k);
-    for(size_t i = 0; i < n; i++){
-        /*
-        printf("The point %zu was [", i);
-        for(size_t j = 0; j < d; j++){
-            printf("%f ", vectors[d*i+j]);
-        }
-        printf("]");
-        */
-        LOG("  it got assigned to centroid %zu [", assignments[i]);
-        /*
-        for(size_t j = 0; j < d; j++){
-            printf("%f ", centroids[d*assignments[i]+j]);
-        }
-        printf("]\n\n");
-        */
-    }
-}
-
-vector<layer_t> train(FloatMatrix& vectors, size_t L) {
+vector<layer_t> train(const FloatMatrix& vectors, size_t L) {
     vector<layer_t> layers = vector<layer_t>(L);
 
     for (size_t layer_id = 0; layer_id < L; layer_id++) {
-        LOG("layer = %zu", layer_id);
+        layer_t& layer = layers[layer_id];
 
         // Compute number of clusters and cluster size on this layer.
         size_t cluster_size = floor(
-				pow(vectors.vector_count(), (layer_id + 1) / (float) (L + 1)));
+                pow(vectors.vector_count(), (layer_id + 1) / (float) (L + 1)));
 
-        layers[layer_id].cluster_num = floor(
-				vectors.vector_count() / (float) cluster_size);
+        layer.cluster_num = floor(
+                vectors.vector_count() / (float) cluster_size);
 
-        LOG("cluster_num = %zu", layers[layer_id].cluster_num);
+        const FloatMatrix& points = (layer_id == 0) ?
+               vectors : layers[layer_id - 1].kr.centroids;
 
-        FloatMatrix& points = (layer_id == 0) ?
-		   	vectors : layers[layer_id - 1].kr.centroids;
+        layer.kr = perform_kmeans(points, layer.cluster_num);
 
-		layers[layer_id].kr = perform_kmeans(points, layers[layer_id].cluster_num);
-
-        if (VERBOSE) {
-			std::cout << "Centroids in layer " << layer_id << std::endl;
-			layers[layer_id].kr.centroids.print();
-		}
+        layer.centroid_children.resize(layer.cluster_num);
+        for (size_t i = 0; i < layer.kr.assignments.size(); i++) {
+            layer.centroid_children[layer.kr.assignments[i]].push_back(i);
+        }
     }
 
     return layers;
 }
 
-size_t predict(vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
-		size_t opened_trees, FloatMatrix& vectors) {
+size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
+        size_t opened_trees, const FloatMatrix& vectors) {
 
-    // All centroids on the (L-1)th layer should be checked.
     vector<size_t> candidates;
-
     for (size_t i = 0; i < layers.back().cluster_num; i++) {
         candidates.push_back(i);
     }
 
     for (size_t layer_id = layers.size() - 1; layer_id != (size_t)(-1); layer_id--) {
-        LOG("layer = %zu", layer_id)
-
-		vector<std::pair<size_t, float>> best_centroids;
-        for (size_t i = 0; i < candidates.size(); i++) {
-            size_t c = candidates[i];
+        vector<std::pair<float, size_t>> best_centroids;
+        for (auto c: candidates) {
             float result = faiss::fvec_inner_product(
-					queries.row(qnum), 
-					layers[layer_id].kr.centroids.row(c),
-					queries.vector_length);
+                    queries.row(qnum), 
+                    layers[layer_id].kr.centroids.row(c),
+                    queries.vector_length);
 
-            best_centroids.push_back({c, result});
-            LOG("centroid %zu: result %f", c, result);
+            best_centroids.push_back({result, c});
+        }
+        sort(best_centroids.rbegin(), best_centroids.rend());
+
+        if (opened_trees < best_centroids.size()) {
+            best_centroids.resize(opened_trees);
         }
 
-        // We are interested in exploring P first centroids on this vector.
-        sort(best_centroids.begin(), best_centroids.end(), comp);
-        if (VERBOSE) {
-            printf("best_centroids:\n");
-            for (size_t i = 0; i < best_centroids.size() && i < opened_trees; i++) {
-                cout << best_centroids[i].first << " " << best_centroids[i].second << endl;
-            }
-        }
-
-        if (VERBOSE) {
-            if (layer_id > 0) {
-                printf("next layer centroids: ");
-            }
-            else {
-                printf("candidate set (CL): ");
-            }
-        }
-
-        size_t num_points = (layer_id == 0) ?
-		   	vectors.vector_count() : layers[layer_id - 1].cluster_num;
-        LOG("np: %zu", num_points);
         candidates.clear();
-        // Mark centroids to be checked at next layer.
-		// TODO: Check this carefully - dumb or wrong.
-        for (size_t i = 0; i < num_points; i++) {
-            for (size_t j = 0; j < opened_trees && j < best_centroids.size(); j++) {
-                if (layers[layer_id].kr.assignments[i] == best_centroids[j].first) {
-                    candidates.push_back(i);
-                    if (VERBOSE) { printf("%zu ", i); }
-                    break;
-                }
-            }
-        }
 
-        best_centroids.clear();
+        for (auto val_cid: best_centroids) {
+            size_t cid = val_cid.second;
+            candidates.insert(candidates.end(), 
+                    layers[layer_id].centroid_children[cid].begin(),
+                    layers[layer_id].centroid_children[cid].end()
+            );
+        }
     }
     // Last layer - find best match.
     size_t best_result = -1;
@@ -272,9 +139,9 @@ size_t predict(vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
     for (size_t i = 0; i < candidates.size(); i++) {
         size_t c = candidates[i];
         float result = faiss::fvec_inner_product(
-				queries.row(qnum),
-			   	vectors.row(c),
-			   	vectors.vector_length);
+                queries.row(qnum),
+                   vectors.row(c),
+                   vectors.vector_length);
         if (!maximum_initialized) {
             maximum_initialized = true;
             maximum_result = result;
@@ -284,68 +151,37 @@ size_t predict(vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
             best_result = c;
         }
     }
-    printf("Vector %zu, inner product = %f\n", best_result, maximum_result);
     return best_result;
-}
-
-template <typename T>
-vector<T> load_vecs (const char* fname, size_t& d, size_t& n, size_t m){
-    FILE* f = fopen(fname, "rb");
-    int dim;
-    fread(&dim, 1, sizeof(int), f);
-    fseek(f, 0, SEEK_END);
-    size_t fsz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    size_t row_size = sizeof(T) * dim + sizeof(int);
-    n = fsz / row_size;
-    if(fsz != n * row_size){
-        printf("Wrong file size\n");
-        exit(1);
-    }
-    d = dim + m;
-    vector<T> v (n * d);
-    for(size_t i = 0; i < n; i++){
-        int dummy;
-        fread(&dummy, 1, sizeof(int), f);
-        assert(dummy == dim);
-        fread(v.data() + d * i, dim, sizeof(T), f);
-    }
-    return v;
 }
 
 void main_kmeans() {
     const char* input_file;
     const char* query_file;
     size_t m, L;
-	size_t opened_trees = 2;
+    size_t opened_trees = 2;
 
-	input_file = "input";
-	query_file = "queries";
-	m = 3;
-	L = 2;
-	VERBOSE = 0;
+    input_file = "input";
+    query_file = "queries";
+    m = 3;
+    L = 2;
 
-	auto vectors = load_data(input_file, m);
-    auto vectors_copy = vectors;
+    auto vectors_original = load_text_file<float>(input_file);
 
-    normalize_(vectors);
-    expand_(vectors, m);
+    auto vectors = normalize_and_expand_vectors(vectors_original, m);
 
     vector<layer_t> layers = train(vectors, L);
 
-	auto queries = load_data(query_file, m);
-    expand_queries_(queries, m);
+    auto queries_original = load_text_file<float>(query_file);
+
+    auto queries = expand_queries(queries_original, m);
 
     assert(vectors.vector_length == queries.vector_length and
-		   	"Queries and Vectors dimension mismatch!");
+               "Queries and Vectors dimension mismatch!");
 
     vector<int> predictions;
     for (size_t i = 0; i < queries.vector_count(); i++) {
-		std::cout << "Query " << i << std::endl;
-
         size_t res = predict(layers, queries, i, opened_trees, vectors);
         predictions.push_back(res);
-		printf("%zu\n", res);
+        std::cout << "Query " << i << ": " << res << std::endl;
     }
-    printf("\n");
 }

@@ -2,10 +2,11 @@
 
 #include <fstream>
 #include <iostream>
+#include <cassert>
 
 
 template <typename T>
-FlatMatrix<T> load_file(std::string filename) {
+FlatMatrix<T> load_text_file(std::string filename) {
     FlatMatrix<T> matrix;
     std::ifstream infile(filename);
     size_t cnt, dim;
@@ -15,6 +16,33 @@ FlatMatrix<T> load_file(std::string filename) {
         infile >> cell;
     }
     return matrix;
+}
+
+template <typename T>
+FlatMatrix<T> load_vecs (std::string filename) {
+    std::ifstream infile(filename, std::ios::binary);
+    uint32_t dim;
+    infile.read((char*) &dim, sizeof(dim));
+
+    infile.seekg(0, std::ios::end);
+    size_t fsz = infile.tellg();
+    infile.seekg(0, std::ios::beg);
+
+    size_t row_size = sizeof(T) * dim + sizeof(dim);
+    size_t n = fsz / row_size;
+    if(fsz != n * row_size){
+        printf("Wrong file size\n");
+        exit(1);
+    }
+    FlatMatrix<T> result;
+    result.resize(n, dim);
+    for(size_t i = 0; i < n; i++){
+        uint32_t rowsz;
+        infile.read((char*) &rowsz, sizeof(rowsz));
+        assert(rowsz == dim);
+        infile.read((char*) result.row(i), sizeof(T) * rowsz);
+    }
+    return result;
 }
 
 template <typename T>
@@ -28,7 +56,7 @@ T& FlatMatrix<T>::at(size_t vec, size_t ind) {
 }
 
 template <typename T>
-T FlatMatrix<T>::at(size_t vec, size_t ind) const {
+const T& FlatMatrix<T>::at(size_t vec, size_t ind) const {
     return data.at(vec * vector_length + ind);
 }
 
@@ -44,6 +72,11 @@ void FlatMatrix<T>::print() const {
 
 template <typename T>
 T* FlatMatrix<T>::row(size_t num) {
+    return &at(num, 0);
+}
+
+template <typename T>
+const T* FlatMatrix<T>::row(size_t num) const {
     return &at(num, 0);
 }
 

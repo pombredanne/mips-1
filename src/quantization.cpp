@@ -12,8 +12,6 @@
 
 using namespace std;
 
-typedef FlatMatrix<float> FloatMatrix;
-
 vector<size_t> prepare_permutation(size_t m) {
     // TODO: Don't shuffle, but rotate randomly.
     // TODO: Also, probably use some better source of randomness.
@@ -126,8 +124,8 @@ size_t answer_query(
 int main_quantization() {
     int parts_count=2;
     size_t k = 3; // Centroid count.
-    FloatMatrix data = load_file<float>("input");
-    FloatMatrix queries = load_file<float>("queries");
+    FloatMatrix data = load_text_file<float>("input");
+    FloatMatrix queries = load_text_file<float>("queries");
     std::cout << "Data:\n";
     data.print();
     std::cout << "Queries:\n";
