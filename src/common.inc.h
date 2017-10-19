@@ -21,6 +21,10 @@ FlatMatrix<T> load_text_file(std::string filename) {
 template <typename T>
 FlatMatrix<T> load_vecs (std::string filename) {
     std::ifstream infile(filename, std::ios::binary);
+	if (infile.fail()) {
+		std::cout << "Failed to open file." << std::endl;
+		exit(1);
+	}
     uint32_t dim;
     infile.read((char*) &dim, sizeof(dim));
 
@@ -31,7 +35,7 @@ FlatMatrix<T> load_vecs (std::string filename) {
     size_t row_size = sizeof(T) * dim + sizeof(dim);
     size_t n = fsz / row_size;
     if(fsz != n * row_size){
-        printf("Wrong file size\n");
+		std::cout << "Wrong file size" << std::endl;
         exit(1);
     }
     FlatMatrix<T> result;
