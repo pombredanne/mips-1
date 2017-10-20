@@ -1,15 +1,9 @@
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cassert>
-#include <cstring>
+#include "bench.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <cstdio>
+#include <cassert>
 
 #include <sys/time.h>
-#include <memory>
 
 #include "faiss/AutoTune.h"
 #include "../src/common.h"
@@ -21,13 +15,23 @@ double elapsed () {
     return  tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-faiss::Index* get_trained_index(const FloatMatrix& xt) {
-    faiss::Index* index = faiss::index_factory(xt.vector_length, "IVF4096,Flat");
-    index->train(xt.vector_count(), xt.data.data());
-    return index;
-}
+#if 0
+std::string filenames[4] = {
+	"sift1M/sift_learn.fvecs",
+	"sift1M/sift_base.fvecs",
+	"sift1M/sift_query.fvecs",
+	"sift1M/sift_groundtruth.ivecs",
+};
+#else
+std::string filenames[4] = {
+	"siftsmall/siftsmall_learn.fvecs",
+	"siftsmall/siftsmall_base.fvecs",
+	"siftsmall/siftsmall_query.fvecs",
+	"siftsmall/siftsmall_groundtruth.ivecs",
+};
+#endif
 
-int main() {
+int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     double t0 = elapsed();
 
     faiss::Index* index;
@@ -36,7 +40,7 @@ int main() {
     {
         printf ("[%.3f s] Loading train set\n", elapsed() - t0);
 
-        FloatMatrix xt = load_vecs<float>("sift1M/sift_learn.fvecs");
+        FloatMatrix xt = load_vecs<float>(filenames[0]);
         d = xt.vector_length;
 
         printf ("[%.3f s] Preparing index d=%zu and training on %zu vectors\n",
@@ -48,7 +52,7 @@ int main() {
     {
         printf ("[%.3f s] Loading database\n", elapsed() - t0);
 
-        FloatMatrix xb = load_vecs<float>("sift1M/sift_base.fvecs");
+        FloatMatrix xb = load_vecs<float>(filenames[1]);
         size_t d2 = xb.vector_length;
         size_t nb = xb.vector_count();
         assert(d == d2 || !"dataset does not have same dimension as train set");
@@ -65,7 +69,7 @@ int main() {
     {
         printf ("[%.3f s] Loading queries\n", elapsed() - t0);
 
-        xq = load_vecs<float>("sift1M/sift_query.fvecs");
+        xq = load_vecs<float>(filenames[2]);
         size_t d2 = xq.vector_length;
         nq = xq.vector_count();
         assert(d == d2 || !"query does not have same dimension as train set");
@@ -80,7 +84,7 @@ int main() {
                 elapsed() - t0, nq);
 
         // load ground-truth and convert int to long
-        FlatMatrix<int> gt_int = load_vecs<int>("sift1M/sift_groundtruth.ivecs");
+        FlatMatrix<int> gt_int = load_vecs<int>(filenames[3]);
         k = gt_int.vector_length;
         size_t nq2 = gt_int.vector_count();
 
@@ -98,7 +102,7 @@ int main() {
                 elapsed() - t0, nq);
 
         // output buffers
-        faiss::Index::idx_t *I = new  faiss::Index::idx_t[nq * k];
+        faiss::Index::idx_t *I = new faiss::Index::idx_t[nq * k];
         float *D = new float[nq * k];
 
         index->search(nq, xq.data.data(), k, D, I);

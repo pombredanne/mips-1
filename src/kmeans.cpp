@@ -1,3 +1,5 @@
+#include "kmeans.h"
+
 #include "common.h"
 
 #include "faiss/utils.h"
@@ -12,19 +14,15 @@
 #include <iostream>
 
 using namespace std;
+using layer_t = IndexHierarchicKmeans::layer_t;
 
-struct layer_t {
-    kmeans_result kr;
-    vector<vector<size_t>> centroid_children;
-    size_t cluster_num;
-};
 
-float fvec_norm_L2(const float *vec, size_t size) {
+static float fvec_norm_L2(const float *vec, size_t size) {
     return sqrt(faiss::fvec_norm_L2sqr(vec, size));
 }
 
 // TODO: Maybe use the shorter extension with square root?
-FloatMatrix normalize_and_expand_vectors(const FloatMatrix& matrix, size_t m) {
+static FloatMatrix normalize_and_expand_vectors(const FloatMatrix& matrix, size_t m) {
     FloatMatrix result;
     result.resize(matrix.vector_count(), matrix.vector_length + m);
 
@@ -56,7 +54,7 @@ FloatMatrix normalize_and_expand_vectors(const FloatMatrix& matrix, size_t m) {
     return result;
 }
 
-FloatMatrix expand_queries(const FloatMatrix& matrix, size_t m) {
+static FloatMatrix expand_queries(const FloatMatrix& matrix, size_t m) {
     FloatMatrix result;
     result.resize(matrix.vector_count(), matrix.vector_length + m);
 
@@ -71,7 +69,7 @@ FloatMatrix expand_queries(const FloatMatrix& matrix, size_t m) {
     return result;
 }
 
-vector<layer_t> train(const FloatMatrix& vectors, size_t L) {
+static vector<layer_t> make_layers(const FloatMatrix& vectors, size_t L) {
     vector<layer_t> layers = vector<layer_t>(L);
 
     for (size_t layer_id = 0; layer_id < L; layer_id++) {
@@ -98,7 +96,7 @@ vector<layer_t> train(const FloatMatrix& vectors, size_t L) {
     return layers;
 }
 
-size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
+static size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
         size_t opened_trees, const FloatMatrix& vectors) {
 
     vector<size_t> candidates;
@@ -154,6 +152,55 @@ size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
     return best_result;
 }
 
+IndexHierarchicKmeans::IndexHierarchicKmeans(
+		size_t dim, size_t m, size_t layers_count, size_t opened_trees):
+	Index(dim, faiss::METRIC_INNER_PRODUCT),
+	layers_count(layers_count), m(m), opened_trees(opened_trees) {}
+
+void IndexHierarchicKmeans::add(idx_t n, const float* data) {
+	vectors_original.resize(n, d);
+	memcpy(vectors_original.data.data(), data, n * d * sizeof(float));
+	vectors = normalize_and_expand_vectors(vectors_original, m);
+    layers = make_layers(vectors, layers_count);
+}
+
+void IndexHierarchicKmeans::reset() {
+	vectors.data.clear();
+	vectors_original.data.clear();
+	layers.clear();
+}
+
+void IndexHierarchicKmeans::search(idx_t n, const float* data, idx_t k, 
+		float* distances, idx_t* labels) const {
+	// TODO: ugly copying tbh - should use given array
+	FloatMatrix queries_original;
+	queries_original.resize(n, d);
+	memcpy(queries_original.data.data(), data, n * d * sizeof(float));
+	FloatMatrix queries = expand_queries(queries_original, m);
+
+	FlatMatrix<idx_t> labels_matrix;
+	labels_matrix.resize(n, k);
+    for (size_t i = 0; i < queries.vector_count(); i++) {
+        labels_matrix.at(i, 0) = predict(layers, queries, i, opened_trees, vectors);
+		for (idx_t j = 1; j < k; j++) {
+			labels_matrix.at(i, j) = -1;
+		}
+
+		for (idx_t j = 0; j < k; j++) {
+			idx_t lab = labels_matrix.at(i, j);
+			if (lab != -1) {
+				distances[i * k + j] = faiss::fvec_inner_product(
+					vectors_original.row(lab),
+					queries_original.row(i),
+					d
+				);
+			}
+		}
+    }
+	memcpy(labels, labels_matrix.data.data(), n * k * sizeof(idx_t));
+}
+
+
 void main_kmeans() {
     const char* input_file;
     const char* query_file;
@@ -166,13 +213,11 @@ void main_kmeans() {
     L = 2;
 
     auto vectors_original = load_text_file<float>(input_file);
-
     auto vectors = normalize_and_expand_vectors(vectors_original, m);
 
-    vector<layer_t> layers = train(vectors, L);
+    vector<layer_t> layers = make_layers(vectors, L);
 
     auto queries_original = load_text_file<float>(query_file);
-
     auto queries = expand_queries(queries_original, m);
 
     assert(vectors.vector_length == queries.vector_length and
