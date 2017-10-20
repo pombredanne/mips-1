@@ -11,5 +11,5 @@ faiss::Index* get_trained_index(const FloatMatrix& xt) {
 }
 
 int main() {
-	bench(get_trained_index);
+    bench(get_trained_index);
 }

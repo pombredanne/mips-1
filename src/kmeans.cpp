@@ -153,51 +153,51 @@ static size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_
 }
 
 IndexHierarchicKmeans::IndexHierarchicKmeans(
-		size_t dim, size_t m, size_t layers_count, size_t opened_trees):
-	Index(dim, faiss::METRIC_INNER_PRODUCT),
-	layers_count(layers_count), m(m), opened_trees(opened_trees) {}
+        size_t dim, size_t m, size_t layers_count, size_t opened_trees):
+    Index(dim, faiss::METRIC_INNER_PRODUCT),
+    layers_count(layers_count), m(m), opened_trees(opened_trees) {}
 
 void IndexHierarchicKmeans::add(idx_t n, const float* data) {
-	vectors_original.resize(n, d);
-	memcpy(vectors_original.data.data(), data, n * d * sizeof(float));
-	vectors = normalize_and_expand_vectors(vectors_original, m);
+    vectors_original.resize(n, d);
+    memcpy(vectors_original.data.data(), data, n * d * sizeof(float));
+    vectors = normalize_and_expand_vectors(vectors_original, m);
     layers = make_layers(vectors, layers_count);
 }
 
 void IndexHierarchicKmeans::reset() {
-	vectors.data.clear();
-	vectors_original.data.clear();
-	layers.clear();
+    vectors.data.clear();
+    vectors_original.data.clear();
+    layers.clear();
 }
 
 void IndexHierarchicKmeans::search(idx_t n, const float* data, idx_t k, 
-		float* distances, idx_t* labels) const {
-	// TODO: ugly copying tbh - should use given array
-	FloatMatrix queries_original;
-	queries_original.resize(n, d);
-	memcpy(queries_original.data.data(), data, n * d * sizeof(float));
-	FloatMatrix queries = expand_queries(queries_original, m);
+        float* distances, idx_t* labels) const {
+    // TODO: ugly copying tbh - should use given array
+    FloatMatrix queries_original;
+    queries_original.resize(n, d);
+    memcpy(queries_original.data.data(), data, n * d * sizeof(float));
+    FloatMatrix queries = expand_queries(queries_original, m);
 
-	FlatMatrix<idx_t> labels_matrix;
-	labels_matrix.resize(n, k);
+    FlatMatrix<idx_t> labels_matrix;
+    labels_matrix.resize(n, k);
     for (size_t i = 0; i < queries.vector_count(); i++) {
         labels_matrix.at(i, 0) = predict(layers, queries, i, opened_trees, vectors);
-		for (idx_t j = 1; j < k; j++) {
-			labels_matrix.at(i, j) = -1;
-		}
+        for (idx_t j = 1; j < k; j++) {
+            labels_matrix.at(i, j) = -1;
+        }
 
-		for (idx_t j = 0; j < k; j++) {
-			idx_t lab = labels_matrix.at(i, j);
-			if (lab != -1) {
-				distances[i * k + j] = faiss::fvec_inner_product(
-					vectors_original.row(lab),
-					queries_original.row(i),
-					d
-				);
-			}
-		}
+        for (idx_t j = 0; j < k; j++) {
+            idx_t lab = labels_matrix.at(i, j);
+            if (lab != -1) {
+                distances[i * k + j] = faiss::fvec_inner_product(
+                    vectors_original.row(lab),
+                    queries_original.row(i),
+                    d
+                );
+            }
+        }
     }
-	memcpy(labels, labels_matrix.data.data(), n * k * sizeof(idx_t));
+    memcpy(labels, labels_matrix.data.data(), n * k * sizeof(idx_t));
 }
 
 

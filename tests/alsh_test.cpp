@@ -3,5 +3,5 @@
 void main_alsh();
 
 int main() {
-	main_alsh();
+    main_alsh();
 }

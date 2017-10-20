@@ -1,11 +1,11 @@
 #include "../src/common.h"
 #include "../src/bench.h"
-#include "../src/kmeans.h"
+#include "../src/quantization.h"
 
 
 
 faiss::Index* get_trained_index(const FloatMatrix& xt) {
-    faiss::Index* index = new IndexHierarchicKmeans(xt.vector_length, 3, 3, 100);
+    faiss::Index* index = new IndexSubspaceQuantization(xt.vector_length, 8, 10000);
     index->train(xt.vector_count(), xt.data.data());
     return index;
 }

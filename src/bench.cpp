@@ -17,17 +17,17 @@ double elapsed () {
 
 #if 0
 std::string filenames[4] = {
-	"sift1M/sift_learn.fvecs",
-	"sift1M/sift_base.fvecs",
-	"sift1M/sift_query.fvecs",
-	"sift1M/sift_groundtruth.ivecs",
+    "sift1M/sift_learn.fvecs",
+    "sift1M/sift_base.fvecs",
+    "sift1M/sift_query.fvecs",
+    "sift1M/sift_groundtruth.ivecs",
 };
 #else
 std::string filenames[4] = {
-	"siftsmall/siftsmall_learn.fvecs",
-	"siftsmall/siftsmall_base.fvecs",
-	"siftsmall/siftsmall_query.fvecs",
-	"siftsmall/siftsmall_groundtruth.ivecs",
+    "siftsmall/siftsmall_learn.fvecs",
+    "siftsmall/siftsmall_base.fvecs",
+    "siftsmall/siftsmall_query.fvecs",
+    "siftsmall/siftsmall_groundtruth.ivecs",
 };
 #endif
 
