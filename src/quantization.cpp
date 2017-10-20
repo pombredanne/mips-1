@@ -1,3 +1,5 @@
+#include "quantization.h"
+
 #include "common.h"
 
 #include "faiss/utils.h"
@@ -12,7 +14,7 @@
 
 using namespace std;
 
-vector<size_t> prepare_permutation(size_t m) {
+static vector<size_t> prepare_permutation(size_t m) {
     // TODO: Don't shuffle, but rotate randomly.
     // TODO: Also, probably use some better source of randomness.
     vector<size_t> permutation;
@@ -24,21 +26,21 @@ vector<size_t> prepare_permutation(size_t m) {
 }
 
 template<typename T>
-void print_vector(vector<T> vec) {
+static void print_vector(vector<T> vec) {
     for (auto& val: vec) {
         cout << val << " ";
     }
     cout << endl;
 }
 
-void print_parts(const vector<FloatMatrix>& parts) {
+static void print_parts(const vector<FloatMatrix>& parts) {
     for (const auto& mat: parts) {
         mat.print();
         cout << endl;
     }
 }
 
-void apply_permutation(float* vec, vector<size_t> permutation) {
+static void apply_permutation(float* vec, vector<size_t> permutation) {
     for (size_t i = 0; i < permutation.size(); i++) {
         size_t current = i;
         while (i != permutation[current]) {
@@ -51,7 +53,7 @@ void apply_permutation(float* vec, vector<size_t> permutation) {
     }
 }
 
-vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_count) {
+static vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_count) {
     vector<FloatMatrix> result(parts_count);
     // Ceil division.
     size_t len = (data.vector_length + parts_count - 1) / parts_count;
@@ -64,7 +66,6 @@ vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_count) {
             // will have less elements.
             result[i].resize(data.vector_count(), data.vector_length % len);
         }
-        cout << "Length of part " << i << ": " << result[i].vector_length << endl;
     }
     for (size_t vec = 0; vec < data.vector_count(); vec++) {
         for (size_t ind = 0; ind < data.vector_length; ind++) {
@@ -75,8 +76,10 @@ vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_count) {
 }
 
 // Returns best guess of index of vector closest to query.
-size_t answer_query(
-        vector<kmeans_result>& kmeans, vector<FloatMatrix>& queries, size_t query_number) {
+static size_t answer_query(
+        const vector<kmeans_result>& kmeans,
+           const vector<FloatMatrix>& queries,
+           size_t query_number) {
 
     assert(kmeans.size() == queries.size());
     assert(kmeans.size() > 0);
@@ -113,17 +116,80 @@ size_t answer_query(
         size_t i = max - results.begin();
         for (size_t part = 0; part < part_count; part++) {
             sum += table.at(part, kmeans[part].assignments[i]);
-            int cc = kmeans[part].assignments[i];
-            cout << "mips part " << cc << " " << table.at(part, cc) << endl;
         }
-        cout << "MIPS: " << sum << endl;
 
     return distance(results.begin(), max);
 }
 
+IndexSubspaceQuantization::IndexSubspaceQuantization(
+        size_t dim, size_t subspace_count, size_t centroid_count):
+    Index(dim), subspace_count(subspace_count), centroid_count(centroid_count) {
+    
+    permutation = prepare_permutation(dim);
+}
+
+void IndexSubspaceQuantization::add(idx_t n, const float* data) {
+    FloatMatrix data_matrix;
+    data_matrix.resize(n, d);
+
+    memcpy(data_matrix.data.data(), data, n * d * sizeof(float));
+    for (idx_t i = 0; i < n; i++) {
+        apply_permutation(data_matrix.row(i), permutation);
+    }
+
+    vector<FloatMatrix> parts = make_parts(data_matrix, subspace_count);
+
+    kmeans.resize(subspace_count);
+    for(size_t i = 0; i < subspace_count; i++) {
+        cout << "Clustering for part " << i << endl;
+        kmeans[i] = perform_kmeans(parts[i], centroid_count);
+    }
+}
+
+void IndexSubspaceQuantization::reset() {
+    kmeans.clear();
+    permutation.clear();
+}
+
+void IndexSubspaceQuantization::search(idx_t n, const float* data, idx_t k,
+           float* distances, idx_t* labels) const { 
+
+    FloatMatrix queries;
+    queries.resize(n, d);
+    memcpy(queries.data.data(), data, n * d * sizeof(float));
+    for (idx_t i = 0; i < n; i++) {
+        apply_permutation(queries.row(i), permutation);
+    }
+
+    vector<FloatMatrix> query_parts = make_parts(queries, subspace_count);
+    for (size_t q = 0; q < queries.vector_count(); q++) {
+        size_t ans = answer_query(kmeans, query_parts, q);
+        labels[q * k] = ans;
+        for (idx_t j = 1; j < k; j++) {
+            labels[q * k + j] = -1;
+        }
+
+        for (idx_t j = 0; j < k; j++) {
+            idx_t lab = labels[q * k + j];
+            if (lab != -1) {
+                // TODO: write distances...
+                /*
+                distances[q * k + j] = faiss::fvec_inner_product(
+                    vectors_original.row(lab),
+                    queries_original.row(i),
+                    d
+                );
+                */
+            }
+        }
+    }
+
+}
+
 int main_quantization() {
-    int parts_count=2;
-    size_t k = 3; // Centroid count.
+    int parts_count = 2;
+    int k = 3;
+
     FloatMatrix data = load_text_file<float>("input");
     FloatMatrix queries = load_text_file<float>("queries");
     std::cout << "Data:\n";
