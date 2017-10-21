@@ -7,6 +7,7 @@
 #include <cassert>
 #include <map>
 #include <set>
+#include <algorithm>
 #include <omp.h>
 
 
@@ -27,12 +28,20 @@ const float U = 0.9;
 // Number of hash function in one hash table.
 const size_t K = 32;
 
+// Number of best vectors returned for each query
+const size_t T = 5;
+
 
 #define time_report_printf(msg) { print_time_difference(start.tv_sec, start.tv_nsec); \
                                   printf(msg); \
                                   clock_gettime(CLOCK_REALTIME, &start); \
 }
 
+struct sort_pred {
+    bool operator()(const std::pair<int,int> &left, const std::pair<int,int> &right) {
+        return left.second > right.second;
+    }
+};
 
 int dot_product_hash(vector<float>& a, vector<float>& x, float b) {
     assert(a.size() == x.size());
@@ -61,7 +70,7 @@ void print_time_difference(long time_sec, long time_nsec) {
     double sec_diff_double = nsec_diff / (1000.0 * 1000.0 * 1000.0);
     sec_diff_double += sec_diff;
 
-    printf("%.3lf s\n", sec_diff_double);
+    printf(" %.3lf s\n", sec_diff_double);
 }
 
 float randn() {
@@ -117,8 +126,6 @@ vector<vector<float>> load_db(string fname,
     fscanf(database, "%lu", number_of_vectors);
     fscanf(database, "%lu", vector_length);
 
-    printf("Setting up data structures...\t");
-
     vector<vector<float> > db(*number_of_vectors);
 
     for (size_t i = 0; i < *number_of_vectors; i++) {
@@ -163,7 +170,8 @@ void expand(vector<vector<float> >& vec, size_t num, vector<float>& norms, float
     }
 }
 
-void main_alsh() {
+int main() {
+//void main_alsh() {
     omp_set_num_threads(4);
 
     size_t number_of_vectors;
@@ -171,6 +179,8 @@ void main_alsh() {
 
     timespec start{};
     clock_gettime(CLOCK_REALTIME, &start);
+
+    time_report_printf("Setting up data structures... ");
 
     vector<vector<float>> db = load_db("input", &number_of_vectors, &vector_length);
 
@@ -231,7 +241,7 @@ void main_alsh() {
     // Print the contents of hash tables
     int hash_table_index = 0;
     for (auto& it: hash_tables) {
-        printf("Hash table %d:\n", hash_table_index);
+        printf("\nHash table %d:\n", hash_table_index);
 
         for (map<vector<int>, set<int> >::iterator it2 = it.begin(); it2 != it.end(); it2++) {
 
@@ -244,32 +254,31 @@ void main_alsh() {
             for (set<int>::iterator it3 = it2->second.begin(); it3 != it2->second.end(); it3++) {
                 printf("%d ", *it3);
             }
-
             printf("\n");
         }
 
         hash_table_index++;
     }
 
-    time_report_printf("Loading queries");
+    time_report_printf("Loading queries...");
 
     size_t number_of_queries;
     size_t query_length;
     vector<vector<float>> queries = load_db("queries", &number_of_queries, &query_length);
 
-    vector<set<int> > matched_vectors(number_of_queries);
     vector<float> query_norm(number_of_queries);
 
     time_report_printf("Scaling queries, computing norms and extending queries...");
 
     expand(queries, number_of_queries, query_norm, maximum_norm, query_length, true);
 
-    time_report_printf("Matching queries... ");
+    time_report_printf("Matching queries...");
 
-    #pragma omp parallel for
+    //#pragma omp parallel for
     for (size_t i = 0; i < number_of_queries; i++) {
+        printf("\nQuery %zu - best matches: ", i);
+        map<int, int> score;
         for (size_t l = 0; l < L; l++) {
-
             vector<int> hash_vector(K);
             for (size_t k = 0; k < K; k++) {
                 hash_vector[k] = dot_product_hash(a_vectors[l][k], queries[i], b_scalars[l][k]);
@@ -277,20 +286,22 @@ void main_alsh() {
 
             auto& current_hash_table = hash_tables[l];
             auto& current_bucket = current_hash_table[hash_vector];
-            matched_vectors[i].insert(current_bucket.begin(), current_bucket.end());
+            
+            for (auto &it: current_bucket) {
+                score[it]++;
+            }
+        }
+        vector<pair<int,int> > score_vector(score.begin(), score.end());
+        sort(score_vector.begin(), score_vector.end(), sort_pred());
+        size_t T_count = 0;
+        for (auto &it: score_vector) {
+            if (T_count >= T)
+                break;
+            printf("%d (%d) ", it.first, it.second);
+            T_count++;
         }
     }
     
     print_time_difference(start.tv_sec, start.tv_nsec);
-
-    for (size_t i = 0; i < number_of_queries; i++) {
-        printf("Query %zu matches vectors: ", i);
-
-        for (auto &it: matched_vectors[i]) {
-            printf(" %d", it);
-        }
-
-        printf("\n");
-    }
 }
 
