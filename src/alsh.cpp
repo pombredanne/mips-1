@@ -170,8 +170,7 @@ void expand(vector<vector<float> >& vec, size_t num, vector<float>& norms, float
     }
 }
 
-int main() {
-//void main_alsh() {
+void main_alsh() {
     omp_set_num_threads(4);
 
     size_t number_of_vectors;
