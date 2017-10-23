@@ -3,3 +3,4 @@ faiss/
 bin/
 build/
 data/
+makefile.inc
