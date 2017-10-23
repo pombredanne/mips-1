@@ -1,2 +1,5 @@
 k-means-mips
 faiss/
+bin/
+build/
+data/
