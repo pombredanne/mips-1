@@ -47,14 +47,11 @@ def test(data):
 
     d = xt.shape[1]
 
-    indexIP = faiss.IndexFlatIP(d)
-    indexL2 = faiss.IndexFlatL2(d)
+    for Index in [faiss.IndexFlatIP, faiss.IndexFlatL2]:
+        index = Index(d)
+        index.add(xb)
 
-    indexIP.add(xb)
-    indexL2.add(xb)
-
-    _eval(indexIP, xq, gt, prefix="IndexIP")
-    _eval(indexL2, xq, gt, prefix="IndexL2")
+        _eval(index, xq, gt, prefix=index.__class__.__name__)
 
 
 def generate_gtIP(data, path, skip_tests=False):
