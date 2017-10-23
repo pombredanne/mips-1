@@ -1,10 +1,11 @@
 import argparse
+import logging
+import os
 import time
 
-import os
 import numpy as np
+
 import faiss
-import logging
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
