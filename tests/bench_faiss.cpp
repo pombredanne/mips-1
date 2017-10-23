@@ -5,7 +5,7 @@
 
 
 faiss::Index* get_trained_index(const FloatMatrix& xt) {
-    faiss::Index* index = faiss::index_factory(xt.vector_length, "IVF4096,Flat");
+    faiss::Index* index = faiss::index_factory(xt.vector_length, "IVF16384,Flat");
     index->train(xt.vector_count(), xt.data.data());
     return index;
 }

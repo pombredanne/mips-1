@@ -28,7 +28,7 @@ faiss/libfaiss.a:
 	(cd faiss; make -j 4)
 
 dirs:
-	mkdir -p bin build
+	mkdir -p bin build data
 
 clean:
 	rm -rf bin build
