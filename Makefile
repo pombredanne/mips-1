@@ -28,10 +28,13 @@ faiss/libfaiss.a:
 	(cd faiss; make -j 4)
 
 dirs:
-	mkdir -p bin build data
+	(mkdir -p bin build data)
 
 clean:
 	rm -rf bin build
 	(cd faiss; make clean)
+
+py:
+	(cd faiss; make py -j 4)
 
 -include $(DEPS)
