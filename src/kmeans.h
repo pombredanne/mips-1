@@ -2,7 +2,6 @@
 
 #include "../faiss/Index.h"
 
-
 struct IndexHierarchicKmeans: public faiss::Index {
     struct layer_t {
         kmeans_result kr;
