@@ -5,7 +5,7 @@
 
 #include <sys/time.h>
 
-#include "faiss/AutoTune.h"
+#include "../faiss/AutoTune.h"
 #include "../src/common.h"
 
 
@@ -15,20 +15,20 @@ double elapsed () {
     return  tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-#if 0
+#if 1
 std::string filenames[4] = {
-    "sift1M/sift_learn.fvecs",
-    "sift1M/sift_base.fvecs",
-    "sift1M/sift_query.fvecs",
-    "sift1M/sift_groundtruth.ivecs",
+    "data/sift1M/sift_learn.fvecs",
+    "data/sift1M/sift_base.fvecs",
+    "data/sift1M/sift_query.fvecs",
+    "data/sift1M/sift_groundtruth.ivecs",
 };
 #else
-std::string filenames[4] = {
-    "siftsmall/siftsmall_learn.fvecs",
-    "siftsmall/siftsmall_base.fvecs",
-    "siftsmall/siftsmall_query.fvecs",
-    "siftsmall/siftsmall_groundtruth.ivecs",
-};
+// std::string filenames[4] = {
+//     "siftsmall/siftsmall_learn.fvecs",
+//     "siftsmall/siftsmall_base.fvecs",
+//     "siftsmall/siftsmall_query.fvecs",
+//     "siftsmall/siftsmall_groundtruth.ivecs",
+// };
 #endif
 
 int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
@@ -86,11 +86,11 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
         // load ground-truth and convert int to long
         FlatMatrix<int> gt_int = load_vecs<int>(filenames[3]);
         k = gt_int.vector_length;
-        size_t nq2 = gt_int.vector_count();
+        size_t ngt = gt_int.vector_count();
 
-        assert(nq2 == nq || !"incorrect nb of ground truth entries");
+        assert(ngt == nq || !"incorrect nb of ground truth entries");
 
-        gt.resize(nq2, k);
+        gt.resize(ngt, k);
         for(size_t i = 0; i < k * nq; i++) {
             gt.data[i] = gt_int.data[i];
         }

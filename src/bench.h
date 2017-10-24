@@ -3,7 +3,7 @@
 
 #include "common.h"
 
-#include "faiss/Index.h"
+#include "../faiss/Index.h"
 
 
 int bench(faiss::Index* get_trained_index(const FloatMatrix& xt));

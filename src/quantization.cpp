@@ -2,8 +2,8 @@
 
 #include "common.h"
 
-#include "faiss/utils.h"
-#include "faiss/Clustering.h"
+#include "../faiss/utils.h"
+#include "../faiss/Clustering.h"
 
 #include <iostream>
 #include <vector>

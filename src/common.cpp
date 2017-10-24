@@ -1,7 +1,7 @@
 #include "common.h"
 
-#include "faiss/Clustering.h"
-#include "faiss/utils.h"
+#include "../faiss/Clustering.h"
+#include "../faiss/utils.h"
 
 
 kmeans_result perform_kmeans(const FlatMatrix<float>& matrix, size_t k) {
