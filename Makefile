@@ -1,12 +1,14 @@
-
 LD_FLAGS=-Lfaiss -lfaiss -lopenblas
 
-CPP_FLAGS= -O2 -I. -g
+CPP_FLAGS= -O2 -I. -g -fPIC
 CPP_FLAGS+= -Wall -Wextra -Wno-unused-result
 CPP_FLAGS+= -std=c++11 -fopenmp
 
-COMPILE=g++ $(CPP_FLAGS)
+BIND_FLAGS= -shared -fPIC
+BIND_INCLUDES=$(shell python3 -m pybind11 --includes)
+BIND_TARGET=python/mips.so
 
+COMPILE= g++ $(CPP_FLAGS)
 
 SOURCES=$(shell find src -name \*.cpp)
 OBJECTS=$(subst .cpp,.o,$(subst src,build,$(SOURCES)))
@@ -14,6 +16,8 @@ DEPS=$(subst .o,.d,$(OBJECTS))
 
 TESTSRC=$(shell find tests -name \*.cpp)
 TESTBINS=$(subst .cpp,,$(subst tests,bin,$(TESTSRC)))
+
+BINDSRC=$(shell find wrap -name \*.cpp)
 
 all: dirs $(TESTBINS)
 
@@ -32,9 +36,13 @@ dirs:
 
 clean:
 	rm -rf bin build
+	rm -f $(BIND_TARGET)
 	(cd faiss; make clean)
 
-py:
+pyfaiss: faiss/swigfaiss.swig
 	(cd faiss; make py -j 4)
+
+py: bin faiss/libfaiss.a $(BINDSRC)
+	g++ $(BIND_FLAGS) $(CPP_FLAGS) $(BIND_INCLUDES) $(OBJECTS) $(BINDSRC) -o $(BIND_TARGET) $(LD_FLAGS)
 
 -include $(DEPS)
