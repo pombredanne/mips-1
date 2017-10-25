@@ -50,6 +50,15 @@ FlatMatrix<T> load_vecs (std::string filename) {
 }
 
 template <typename T>
+FlatMatrix<T> from_dtype(const T* data, size_t n, size_t d) {
+    FlatMatrix ret;
+    ret.resize(n, d);
+    memcpy(ret.data.data(), data, n * d * sizeof(T));
+
+    return ret;
+}
+
+template <typename T>
 size_t FlatMatrix<T>::vector_count() const {
     return data.size() / vector_length;
 }

@@ -44,3 +44,49 @@ void scale(float* vec, float alpha, size_t size) {
         vec[i] /= alpha;
     }
 }
+
+float euclidean_norm(const float* vec, size_t d) {
+    float norm = faiss::fvec_inner_product(vec, vec, d);
+    return sqrtf(norm);
+}
+
+float euclidean_norm(const std::vector<float> &vec) {
+    return euclidean_norm(vec.data(), vec.size());
+}
+
+int dot_product_hash(float *a, float* x, float b, float r, size_t d) {
+    float mult_result = faiss::fvec_inner_product(a, x, d);
+    return (int) floor((mult_result + b) / r);
+}
+
+int dot_product_hash(std::vector<float> &a, std::vector<float> &x, float b, float r) {
+    assert(a.size() == x.size());
+    return dot_product_hash(a.data(), x.data(), b, r, a.size());
+}
+
+float max_value(std::vector<float> &vec) {
+    float maximum = std::numeric_limits<float>::min();
+    for (auto v_i: vec) {
+        if (v_i > maximum) {
+            maximum = v_i;
+        }
+    }
+
+    return maximum;
+}
+
+float randn() {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::normal_distribution<float> d(0,1);
+
+    return d(gen);
+}
+
+float uniform(float low, float high) {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_real_distribution<float> d(low, high);
+
+    return d(gen);
+}

@@ -158,6 +158,7 @@ IndexHierarchicKmeans::IndexHierarchicKmeans(
     layers_count(layers_count), m(m), opened_trees(opened_trees) {}
 
 void IndexHierarchicKmeans::add(idx_t n, const float* data) {
+    //todo: can we avoid memcpy here? We should think about FloatMatrix construtable from float ptr.
     vectors_original.resize(n, d);
     memcpy(vectors_original.data.data(), data, n * d * sizeof(float));
     vectors = normalize_and_expand_vectors(vectors_original, m);

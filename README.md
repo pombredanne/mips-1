@@ -18,3 +18,6 @@ Confirm that the installtion was sucessful by running
 export PYTHONPATH=/path/to/faiss/root/directory
 python -c "import faiss"
 ```
+
+
+    

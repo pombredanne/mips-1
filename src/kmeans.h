@@ -1,5 +1,4 @@
 #include "common.h"
-
 #include "../faiss/Index.h"
 
 struct IndexHierarchicKmeans: public faiss::Index {
