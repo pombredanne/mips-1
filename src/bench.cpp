@@ -15,21 +15,21 @@ double elapsed () {
     return  tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-#if 1
+//#if 1
+//std::string filenames[4] = {
+//    "data/sift1M/sift_learn.fvecs",
+//   "data/sift1M/sift_base.fvecs",
+//    "data/sift1M/sift_query.fvecs",
+//    "data/sift1M/sift_groundtruth.ivecs",
+//};
+//#else
 std::string filenames[4] = {
-    "data/sift1M/sift_learn.fvecs",
-    "data/sift1M/sift_base.fvecs",
-    "data/sift1M/sift_query.fvecs",
-    "data/sift1M/sift_groundtruth.ivecs",
-};
-#else
-// std::string filenames[4] = {
-//     "siftsmall/siftsmall_learn.fvecs",
-//     "siftsmall/siftsmall_base.fvecs",
-//     "siftsmall/siftsmall_query.fvecs",
-//     "siftsmall/siftsmall_groundtruth.ivecs",
-// };
-#endif
+     "data/siftsmall/siftsmall_learn.fvecs",
+     "data/siftsmall/siftsmall_base.fvecs",
+     "data/siftsmall/siftsmall_query.fvecs",
+     "data/siftsmall/siftsmall_groundtruth.ivecs",
+ };
+//#endif
 
 int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     double t0 = elapsed();
@@ -37,31 +37,30 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     faiss::Index* index;
     size_t d;
 
-    {
-        printf ("[%.3f s] Loading train set\n", elapsed() - t0);
+    printf ("[%.3f s] Loading train set\n", elapsed() - t0);
 
-        FloatMatrix xt = load_vecs<float>(filenames[0]);
-        d = xt.vector_length;
+    FloatMatrix xt = load_vecs<float>(filenames[0]);
+    d = xt.vector_length;
 
-        printf ("[%.3f s] Preparing index d=%zu and training on %zu vectors\n",
-                elapsed() - t0, d, xt.vector_count());
-        index = get_trained_index(xt);
-    }
+    printf ("[%.3f s] Preparing index d=%zu and training on %zu vectors\n",
+            elapsed() - t0, d, xt.vector_count());
+    double begin_train = elapsed();
+    index = get_trained_index(xt);
+    double train_time = elapsed() - begin_train;
 
 
-    {
-        printf ("[%.3f s] Loading database\n", elapsed() - t0);
+    printf ("[%.3f s] Loading database\n", elapsed() - t0);
 
-        FloatMatrix xb = load_vecs<float>(filenames[1]);
-        size_t d2 = xb.vector_length;
-        size_t nb = xb.vector_count();
-        assert(d == d2 || !"dataset does not have same dimension as train set");
+    FloatMatrix xb = load_vecs<float>(filenames[1]);
+    size_t d2 = xb.vector_length;
+    size_t nb = xb.vector_count();
+    assert(d == d2 || !"dataset does not have same dimension as train set");
 
-        printf ("[%.3f s] Indexing database, size %ld*%ld\n",
-                elapsed() - t0, nb, d);
-
-        index->add(nb, xb.data.data());
-    }
+    printf ("[%.3f s] Indexing database, size %ld*%ld\n",
+            elapsed() - t0, nb, d);
+    double begin_add = elapsed();
+    index->add(nb, xb.data.data());
+    double add_time = elapsed() - begin_add;
 
     FloatMatrix xq;
     size_t nq;
@@ -97,7 +96,7 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     }
 
 
-    { // Use the found configuration to perform a search
+    {
         printf ("[%.3f s] Perform a search on %ld queries\n",
                 elapsed() - t0, nq);
 
@@ -105,7 +104,9 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
         faiss::Index::idx_t *I = new faiss::Index::idx_t[nq * k];
         float *D = new float[nq * k];
 
+        double begin_search = elapsed();
         index->search(nq, xq.data.data(), k, D, I);
+        double search_time = elapsed() - begin_search;
 
         printf ("[%.3f s] Compute recalls\n", elapsed() - t0);
 
@@ -124,7 +125,9 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
         printf("R@1 = %.4f\n", n_1 / float(nq));
         printf("R@10 = %.4f\n", n_10 / float(nq));
         printf("R@100 = %.4f\n", n_100 / float(nq));
-
+        printf("Train time = %.3f\n", train_time);
+        printf("Add time = %.3f\n", add_time);
+        printf("Search time = %.3f\n", search_time);
     }
 
     delete index;
