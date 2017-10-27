@@ -1,6 +1,8 @@
-k-means-mips
 faiss/
 bin/
 build/
 data/
 makefile.inc
+.idea/
+CMakeLists.txt
+python/*.so

@@ -1,6 +1,6 @@
 #include "common.h"
 
-#include "faiss/Index.h"
+#include "../faiss/Index.h"
 
 
 struct IndexSubspaceQuantization: public faiss::Index {
