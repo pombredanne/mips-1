@@ -1,3 +1,4 @@
+#include "common.h"
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -31,7 +32,6 @@ const size_t K = 32;
 // Number of best vectors returned for each query
 const size_t T = 5;
 
-
 #define time_report_printf(msg) { print_time_difference(start.tv_sec, start.tv_nsec); \
                                   printf(msg); \
                                   clock_gettime(CLOCK_REALTIME, &start); \
@@ -43,12 +43,12 @@ struct sort_pred {
     }
 };
 
-int dot_product_hash(vector<float>& a, vector<float>& x, float b) {
-    assert(a.size() == x.size());
+int dot_product_hash(float* a, float* x, float b, size_t d) {
+    //assert(a.size() == x.size());
 
     //TODO: Use fast inner product?
     float mult_result = 0.0f;
-    for (size_t i = 0; i < a.size(); i++) {
+    for (size_t i = 0; i < d; i++) {
          mult_result += a[i] * x[i];
     }
 
@@ -90,13 +90,12 @@ float uniform(float low, float high) {
 }
 
 // TODO: Replace with fast inner product?
-float euclidean_norm(vector<float>& vec) {
+float euclidean_norm(float* vec, size_t d) {
     float sum = 0;
 
-    for (auto v_i: vec) {
-        sum += v_i * v_i;
+    for (size_t i = 0;i<d;i++) {
+        sum += vec[i]* vec[i];
     }
-
     return sqrt(sum);
 }
 
@@ -107,12 +106,11 @@ float max_value(vector<float>& vec) {
             maximum = v_i;
         }
     }
-
     return maximum;
 }
 
-void scale_(vector<float>& vec, float alpha) {
-    for (size_t i = 0; i < vec.size(); i++) {
+void scale_(float* vec, float alpha, size_t d) {
+    for (size_t i = 0; i < d; i++) {
         vec[i] *= alpha;
     }
 }
@@ -142,108 +140,72 @@ vector<vector<float>> load_db(string fname,
     return db;
 }
 
-void expand(vector<vector<float> >& vec, size_t num, vector<float>& norms, float max_norm, size_t length, bool queries) {
+void expand(FloatMatrix &vec, vector<float>& norms, float max_norm, size_t length, bool queries) {
     #pragma omp parallel for
-    for (size_t i = 0; i < num; i++) {
-        scale_(vec[i], U / max_norm);
+    for (size_t i = 0; i < vec.vector_count(); i++) {
+        scale_(vec.row(i), U / max_norm, length);
 
-        float vec_norm = euclidean_norm(vec[i]);
+        float vec_norm = euclidean_norm(vec.row(i), length);
         norms[i] = vec_norm;
 
         for (auto j = length; j < length + m; j++) {
             if (!queries) {
-                vec[i][j] = vec_norm;
+                vec.at(i,j) = vec_norm;
                 vec_norm *= vec_norm;
             } else {
-                vec[i][j] = 0.5f;
+                vec.at(i,j) = 0.5f;
             }
         }
 
         for (auto j = length + m; j < length + 2*m; j++) {
             if (!queries) {
-                vec[i][j] = 0.5f;
+                vec.at(i,j) = 0.5f;
             } else {
-                vec[i][j] = vec_norm;
+                vec.at(i,j) = vec_norm;
                 vec_norm *= vec_norm;
             }
         }
     }
 }
 
-void main_alsh() {
-    omp_set_num_threads(4);
-
-    size_t number_of_vectors;
-    size_t vector_length;
-
-    timespec start{};
-    clock_gettime(CLOCK_REALTIME, &start);
-
-    time_report_printf("Setting up data structures... ");
-
-    vector<vector<float>> db = load_db("input", &number_of_vectors, &vector_length);
-
-    vector<float> vector_norms(number_of_vectors);
-    vector<map<vector<int>, set<int>>> hash_tables(L);
-
-    vector<vector<vector<float>>> a_vectors(L);
-    vector<vector<float>> b_scalars(L);
-
-    // Initialize random data for all L hash tables
+void initialize_random_data(vector<FloatMatrix> &a_vectors, FloatMatrix &b_scalars, size_t d) {
+    b_scalars.resize(L,K);
     for (size_t l = 0; l < L; l++) {
-        a_vectors[l].resize(K);
-        b_scalars[l].resize(K);
+        a_vectors[l].resize(K,d+2*m);
 
         // Generate different random data for each time a vector is hashed
         for (size_t k = 0; k < K; k++) {
-            a_vectors[l][k].resize(vector_length + 2*m);
-
-            for (size_t i = 0; i < vector_length + 2*m; i++) {
-                a_vectors[l][k][i] = randn();
+            for (size_t i = 0; i < d + 2*m; i++) {
+                a_vectors[l].at(k, i) = randn();
             }
 
             auto b = uniform(0, r);
-            b_scalars[l][k] = b;
+            b_scalars.at(l,k) = b;
         }
     }
+}
 
-    time_report_printf("Computing norms... ");
-
-    #pragma omp parallel for
-    for (size_t i = 0; i < number_of_vectors; i++) {
-        vector_norms[i] = euclidean_norm(db[i]);
-    }
-
-    time_report_printf("Scaling vectors, computing norms and extending vectors... ");
-
-    auto maximum_norm = max_value(vector_norms);
-
-    expand(db, number_of_vectors, vector_norms, maximum_norm, vector_length, false);
-    
-    time_report_printf("Hashing vectors... ");
-
-    #pragma omp parallel for
+void hash_vectors(FloatMatrix &data,vector<map<vector<int>, set<int>>> &hash_tables, vector<FloatMatrix> &a_vectors, FloatMatrix &b_scalars, size_t d){
+#pragma omp parallel for
     for (size_t l = 0; l < L; l++) {
-        for (size_t i = 0; i < number_of_vectors; i++) {
+        for (size_t i = 0; i < data.vector_count(); i++) {
             vector<int> hash_vector(K);
 
             for (size_t k = 0; k < K; k++) {
-                hash_vector[k] = dot_product_hash(a_vectors[l][k], db[i], b_scalars[l][k]);
+                hash_vector[k] =  dot_product_hash(a_vectors[l].row(k), data.row(i), b_scalars.at(l,k),d);
             }
 
             hash_tables[l][hash_vector].insert(i);
         }
     }
-
-    time_report_printf("Finished hashing, printing hash tables...");
-
-    // Print the contents of hash tables
+}
+void print_hash_tables(vector<map<vector<int>, set<int>>> &hash_tables)
+{
     int hash_table_index = 0;
     for (auto& it: hash_tables) {
         printf("\nHash table %d:\n", hash_table_index);
 
-        for (map<vector<int>, set<int> >::iterator it2 = it.begin(); it2 != it.end(); it2++) {
-
+        for (map<vector<int>, set<int> >::iterator it2 = it.begin(); it2 != it.end();it2++) {
             printf("[ ");
             for (vector<int>::const_iterator it3 = it2->first.begin(); it3 != it2->first.end(); it3++) {
                 printf("%d ", *it3);
@@ -258,47 +220,89 @@ void main_alsh() {
 
         hash_table_index++;
     }
+}
+void answer_query(float *query, vector<FloatMatrix> &a_vectors, FloatMatrix &b_scalars, vector<map<vector<int>, set<int>>> &hash_tables, size_t d)
+{
+    map<int, int> score;
+    for (size_t l = 0; l < L; l++) {
+        vector<int> hash_vector(K);
+        for (size_t k = 0; k < K; k++) {
+            hash_vector[k] = dot_product_hash(a_vectors[l].row(k), query, b_scalars.at(l,k),d);
+        }
 
+        auto& current_hash_table = hash_tables[l];
+        auto& current_bucket = current_hash_table[hash_vector];
+
+        for (auto &it: current_bucket) {
+            score[it]++;
+        }
+    }
+    vector<pair<int,int> > score_vector(score.begin(), score.end());
+    sort(score_vector.begin(), score_vector.end(), sort_pred());
+    size_t T_count = 0;
+    for (auto &it: score_vector) {
+        if (T_count >= T)
+            break;
+        printf("%d (%d) ", it.first, it.second);
+        T_count++;
+    }
+}
+void main_alsh() {
+    omp_set_num_threads(4);
+
+    size_t d;
+    timespec start{};
+    clock_gettime(CLOCK_REALTIME, &start);
+
+    time_report_printf("Setting up data structures... ");
+
+    FloatMatrix data = load_text_file<float>("input");
+    FloatMatrix queries = load_text_file<float>("queries");
+    vector<float> vector_norms(data.vector_count());
+    vector<map<vector<int>, set<int>>> hash_tables(L);
+    vector<FloatMatrix> a_vectors(L);
+    FloatMatrix b_scalars;
+
+    // Initialize random data for all L hash tables
+    initialize_random_data(a_vectors,b_scalars,d);
+
+    time_report_printf("Computing norms... ");
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < data.vector_count(); i++) {
+        vector_norms[i] = euclidean_norm(data.row(i),d);
+    }
+
+    time_report_printf("Scaling vectors, computing norms and extending vectors... ");
+
+    auto maximum_norm = max_value(vector_norms);
+
+    expand(data, vector_norms, maximum_norm, d, false);
+    
+    time_report_printf("Hashing vectors... ");
+
+    hash_vectors(data,hash_tables, a_vectors, b_scalars, d);
+
+    time_report_printf("Finished hashing, printing hash tables...");
+
+    // Print the contents of hash tables
+
+    print_hash_tables(hash_tables);
     time_report_printf("Loading queries...");
+//    vector<vector<float>> queries = load_db("queries", &number_of_queries, &query_length);
 
-    size_t number_of_queries;
-    size_t query_length;
-    vector<vector<float>> queries = load_db("queries", &number_of_queries, &query_length);
-
-    vector<float> query_norm(number_of_queries);
+    vector<float> query_norm(d);
 
     time_report_printf("Scaling queries, computing norms and extending queries...");
 
-    expand(queries, number_of_queries, query_norm, maximum_norm, query_length, true);
+    expand(queries, query_norm, maximum_norm, d, true);
 
     time_report_printf("Matching queries...");
 
     //#pragma omp parallel for
-    for (size_t i = 0; i < number_of_queries; i++) {
+    for (size_t i = 0; i < queries.vector_count(); i++) {
         printf("\nQuery %zu - best matches: ", i);
-        map<int, int> score;
-        for (size_t l = 0; l < L; l++) {
-            vector<int> hash_vector(K);
-            for (size_t k = 0; k < K; k++) {
-                hash_vector[k] = dot_product_hash(a_vectors[l][k], queries[i], b_scalars[l][k]);
-            }
-
-            auto& current_hash_table = hash_tables[l];
-            auto& current_bucket = current_hash_table[hash_vector];
-            
-            for (auto &it: current_bucket) {
-                score[it]++;
-            }
-        }
-        vector<pair<int,int> > score_vector(score.begin(), score.end());
-        sort(score_vector.begin(), score_vector.end(), sort_pred());
-        size_t T_count = 0;
-        for (auto &it: score_vector) {
-            if (T_count >= T)
-                break;
-            printf("%d (%d) ", it.first, it.second);
-            T_count++;
-        }
+        answer_query(queries.row(i),a_vectors,b_scalars,hash_tables,d);
     }
     
     print_time_difference(start.tv_sec, start.tv_nsec);
