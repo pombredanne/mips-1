@@ -1,4 +1,5 @@
 #include "common.h"
+#include "alsh.h"
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -11,6 +12,8 @@
 #include <algorithm>
 #include <omp.h>
 
+#include "../faiss/utils.h"
+#include "../faiss/Clustering.h"
 
 using namespace std;
 
@@ -247,10 +250,44 @@ void answer_query(float *query, vector<FloatMatrix> &a_vectors, FloatMatrix &b_s
         T_count++;
     }
 }
+
+IndexALSH::IndexALSH(
+        size_t dim, size_t L, size_t K, float r, float U, size_t m):
+        Index(dim, faiss::METRIC_INNER_PRODUCT),
+        L(L),K(K),r(r),U(U),m(m) {}
+
+void IndexALSH::reset() {
+    hash_tables.clear();
+    a_vectors.clear();
+    b_scalars.data.clear();
+}
+void IndexALSH::add(idx_t n, const float* data) {
+    FloatMatrix data_matrix;
+    data_matrix.resize(n, d);
+    memcpy(data_matrix.data.data(), data, n * d * sizeof(float));
+    vector<float> vector_norms(data_matrix.vector_count());
+    hash_tables.resize(L);
+    a_vectors.resize(L);
+
+    initialize_random_data(a_vectors,b_scalars,d);
+
+#pragma omp parallel for
+    for (size_t i = 0; i < data_matrix.vector_count(); i++) {
+        vector_norms[i] = euclidean_norm(data_matrix.row(i),d);
+    }
+    auto maximum_norm = max_value(vector_norms);
+
+    expand(data_matrix, vector_norms, maximum_norm, d, false);
+
+    hash_vectors(data_matrix,hash_tables, a_vectors, b_scalars, d);
+
+}
+
 void main_alsh() {
     omp_set_num_threads(4);
 
     size_t d;
+
     timespec start{};
     clock_gettime(CLOCK_REALTIME, &start);
 
