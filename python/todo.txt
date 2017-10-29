@@ -1,0 +1,5 @@
+- Add support for MultiLabelMarginLoss
+
+- Grid Search for deep net
+
+- Grid Search for scikit-learn

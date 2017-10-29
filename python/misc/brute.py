@@ -1,5 +1,3 @@
-
-
 def read_file(name):
     lines = open(name).readlines()
     cnt, dim = [int(s) for s in lines[0].split()]
