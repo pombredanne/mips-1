@@ -19,6 +19,14 @@ int main(int argc, char **argv) {
         m = atoi(argv[1]);
         layers_count = atoi(argv[2]);
         opened_trees = atoi(argv[3]);
-        bench(get_trained_index);
+
+        faiss::Index* index = bench_train(get_trained_index);
+        bench_add(index);
+
+        for (int i = 3; i < argc; i++) {
+            printf("Querying using opened_trees = %d\n", atoi(argv[i]));
+            ((IndexHierarchicKmeans*) index)->opened_trees = atoi(argv[i]);
+            bench_query(index);
+        }
     }
 }

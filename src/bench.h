@@ -6,6 +6,8 @@
 #include "../faiss/Index.h"
 
 
-int bench(faiss::Index* get_trained_index(const FloatMatrix& xt));
+faiss::Index* bench_train(faiss::Index* get_trained_index(const FloatMatrix& xt));
+void bench_add(faiss::Index* index);
+void bench_query(faiss::Index* index);
 
 #endif
