@@ -14,6 +14,7 @@ struct IndexALSH: public faiss::Index {
     std::vector<std::map<std::vector<int>, std::set<int>>> hash_tables;
     std::vector<FloatMatrix> a_vectors;
     FloatMatrix b_scalars;
+    float maximum_norm;
 
     
     // Parameters:

@@ -33,7 +33,7 @@ const float U = 0.9;
 const size_t K = 32;
 
 // Number of best vectors returned for each query
-const size_t T = 5;
+const size_t T = 1;
 
 #define time_report_printf(msg) { print_time_difference(start.tv_sec, start.tv_nsec); \
                                   printf(msg); \
@@ -46,7 +46,7 @@ struct sort_pred {
     }
 };
 
-int dot_product_hash(float* a, float* x, float b, size_t d) {
+int dot_product_hash(const float* a, const float* x, const float b, size_t d) {
     //assert(a.size() == x.size());
 
     //TODO: Use fast inner product?
@@ -224,7 +224,7 @@ void print_hash_tables(vector<map<vector<int>, set<int>>> &hash_tables)
         hash_table_index++;
     }
 }
-void answer_query(float *query, vector<FloatMatrix> &a_vectors, FloatMatrix &b_scalars, vector<map<vector<int>, set<int>>> &hash_tables, size_t d)
+size_t answer_query(float *query, const vector<FloatMatrix> &a_vectors, const FloatMatrix &b_scalars, const vector<map<vector<int>, set<int>>> hash_tables, size_t d)
 {
     map<int, int> score;
     for (size_t l = 0; l < L; l++) {
@@ -233,7 +233,7 @@ void answer_query(float *query, vector<FloatMatrix> &a_vectors, FloatMatrix &b_s
             hash_vector[k] = dot_product_hash(a_vectors[l].row(k), query, b_scalars.at(l,k),d);
         }
 
-        auto& current_hash_table = hash_tables[l];
+        map<vector<int>, set<int>> current_hash_table(hash_tables[l]);
         auto& current_bucket = current_hash_table[hash_vector];
 
         for (auto &it: current_bucket) {
@@ -249,6 +249,7 @@ void answer_query(float *query, vector<FloatMatrix> &a_vectors, FloatMatrix &b_s
         printf("%d (%d) ", it.first, it.second);
         T_count++;
     }
+    return score_vector[0].first;
 }
 
 IndexALSH::IndexALSH(
@@ -260,6 +261,7 @@ void IndexALSH::reset() {
     hash_tables.clear();
     a_vectors.clear();
     b_scalars.data.clear();
+    maximum_norm = 0.0f;
 }
 void IndexALSH::add(idx_t n, const float* data) {
     FloatMatrix data_matrix;
@@ -275,7 +277,7 @@ void IndexALSH::add(idx_t n, const float* data) {
     for (size_t i = 0; i < data_matrix.vector_count(); i++) {
         vector_norms[i] = euclidean_norm(data_matrix.row(i),d);
     }
-    auto maximum_norm = max_value(vector_norms);
+    maximum_norm = max_value(vector_norms);
 
     expand(data_matrix, vector_norms, maximum_norm, d, false);
 
@@ -283,6 +285,19 @@ void IndexALSH::add(idx_t n, const float* data) {
 
 }
 void IndexALSH::search(idx_t n, const float* data, idx_t k, float* distances, idx_t* labels) const {
+    FloatMatrix queries;
+    queries.resize(n, d);
+    memcpy(queries.data.data(), data, n * d * sizeof(float));
+    vector<float> query_norm(d);
+    expand(queries, query_norm, maximum_norm, d, true);
+    for (size_t q = 0; q < queries.vector_count(); q++) {
+        size_t ans = answer_query(queries.row(q),a_vectors,b_scalars,hash_tables,d);
+        labels[q * k] = ans;
+        for (idx_t j = 1; j < k; j++) {
+            labels[q * k + j] = -1;
+        }
+    }
+
     // TODO
 }
 
