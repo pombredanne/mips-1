@@ -18,7 +18,7 @@ double elapsed () {
 #if 0
 std::string filenames[4] = {
     "data/sift1M/sift_learn.fvecs",
-	"data/sift1M/sift_base.fvecs",
+    "data/sift1M/sift_base.fvecs",
     "data/sift1M/sift_query.fvecs",
     "data/sift1M/sift_groundtruth_IP.ivecs",
 };

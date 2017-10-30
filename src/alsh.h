@@ -15,7 +15,7 @@ struct IndexALSH: public faiss::Index {
     std::vector<FloatMatrix> a_vectors;
     FloatMatrix b_scalars;
 
-	
+    
     // Parameters:
     size_t L;
     size_t K;

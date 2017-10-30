@@ -283,7 +283,7 @@ void IndexALSH::add(idx_t n, const float* data) {
 
 }
 void IndexALSH::search(idx_t n, const float* data, idx_t k, float* distances, idx_t* labels) const {
-	// xD
+    // TODO
 }
 
 void main_alsh() {

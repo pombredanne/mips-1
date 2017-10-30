@@ -9,8 +9,8 @@ kmeans_result perform_kmeans(const FlatMatrix<float>& matrix, size_t k) {
     kmeans_result kr;
     kr.centroids.resize(k, matrix.vector_length);
     kr.assignments.resize(matrix.vector_count());
-	std::vector<float> dist(matrix.vector_count());
-	std::vector<faiss::Index::idx_t> assignments(matrix.vector_count());
+    std::vector<float> dist(matrix.vector_count());
+    std::vector<faiss::Index::idx_t> assignments(matrix.vector_count());
 
     faiss::kmeans_clustering(
         matrix.vector_length, 
@@ -20,13 +20,13 @@ kmeans_result perform_kmeans(const FlatMatrix<float>& matrix, size_t k) {
         kr.centroids.data.data()
     );
 
-	faiss::IndexFlatL2 index(matrix.vector_length);
-	index.add(kr.centroids.vector_count(), kr.centroids.data.data());
-	index.search(matrix.vector_count(), matrix.data.data(), 1,
-			dist.data(), assignments.data());
+    faiss::IndexFlatL2 index(matrix.vector_length);
+    index.add(kr.centroids.vector_count(), kr.centroids.data.data());
+    index.search(matrix.vector_count(), matrix.data.data(), 1,
+            dist.data(), assignments.data());
 
     for (size_t i = 0; i < matrix.vector_count(); i++) {
-		kr.assignments[i] = assignments[i];
+        kr.assignments[i] = assignments[i];
     }
     return kr;
 }
