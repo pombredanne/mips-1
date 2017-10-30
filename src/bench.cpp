@@ -15,21 +15,21 @@ double elapsed () {
     return  tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-//#if 1
-//std::string filenames[4] = {
-//    "data/sift1M/sift_learn.fvecs",
-//   "data/sift1M/sift_base.fvecs",
-//    "data/sift1M/sift_query.fvecs",
-//    "data/sift1M/sift_groundtruth.ivecs",
-//};
-//#else
+#if 0
 std::string filenames[4] = {
-     "data/siftsmall/siftsmall_learn.fvecs",
-     "data/siftsmall/siftsmall_base.fvecs",
-     "data/siftsmall/siftsmall_query.fvecs",
-     "data/siftsmall/siftsmall_groundtruth.ivecs",
+    "data/sift1M/sift_learn.fvecs",
+	"data/sift1M/sift_base.fvecs",
+    "data/sift1M/sift_query.fvecs",
+    "data/sift1M/sift_groundtruth_IP.ivecs",
+};
+#else
+std::string filenames[4] = {
+     "data/siftsmall/sift_learn.fvecs",
+     "data/siftsmall/sift_base.fvecs",
+     "data/siftsmall/sift_query.fvecs",
+     "data/siftsmall/sift_groundtruth_IP.ivecs",
  };
-//#endif
+#endif
 
 int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     double t0 = elapsed();

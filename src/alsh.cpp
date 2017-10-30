@@ -282,6 +282,9 @@ void IndexALSH::add(idx_t n, const float* data) {
     hash_vectors(data_matrix,hash_tables, a_vectors, b_scalars, d);
 
 }
+void IndexALSH::search(idx_t n, const float* data, idx_t k, float* distances, idx_t* labels) const {
+	// xD
+}
 
 void main_alsh() {
     omp_set_num_threads(4);
