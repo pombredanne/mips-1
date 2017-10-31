@@ -96,8 +96,8 @@ static vector<layer_t> make_layers(const FloatMatrix& vectors, size_t L) {
     return layers;
 }
 
-static size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
-        size_t opened_trees, const FloatMatrix& vectors) {
+static vector<size_t> predict(const vector<layer_t>& layers, FloatMatrix& queries, size_t qnum,
+        size_t opened_trees, const FloatMatrix& vectors, size_t k_needed = 1) {
 
     vector<size_t> candidates;
     for (size_t i = 0; i < layers.back().cluster_num; i++) {
@@ -114,9 +114,13 @@ static size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_
 
             best_centroids.push_back({result, c});
         }
-        sort(best_centroids.rbegin(), best_centroids.rend());
 
-        if (opened_trees < best_centroids.size()) {
+        if (best_centroids.size() > opened_trees) {
+            nth_element(
+                    best_centroids.begin(), 
+                    best_centroids.begin() + opened_trees,
+                    best_centroids.end(),
+                    greater<std::pair<float, size_t>>());
             best_centroids.resize(opened_trees);
         }
 
@@ -131,25 +135,30 @@ static size_t predict(const vector<layer_t>& layers, FloatMatrix& queries, size_
         }
     }
     // Last layer - find best match.
-    size_t best_result = -1;
-    float maximum_result = numeric_limits<float>::min();
-    bool maximum_initialized = false;
-    for (size_t i = 0; i < candidates.size(); i++) {
-        size_t c = candidates[i];
+    vector<std::pair<float, size_t>> best_points;
+    for (auto c: candidates) {
         float result = faiss::fvec_inner_product(
-                queries.row(qnum),
-                   vectors.row(c),
-                   vectors.vector_length);
-        if (!maximum_initialized) {
-            maximum_initialized = true;
-            maximum_result = result;
-            best_result = c;
-        } else if (result > maximum_result) {
-            maximum_result = result;
-            best_result = c;
-        }
+                queries.row(qnum), 
+                vectors.row(c),
+                queries.vector_length);
+
+        best_points.push_back({result, c});
     }
-    return best_result;
+    if (best_points.size() > k_needed) {
+        nth_element(
+                best_points.begin(), 
+                best_points.begin() + k_needed,
+                best_points.end(),
+                greater<std::pair<float, size_t>>());
+        best_points.resize(k_needed);
+    }
+    sort(best_points.rbegin(), best_points.rend());
+
+    vector<size_t> res;
+    for (size_t i = 0; i < best_points.size(); i++) {
+        res.push_back(best_points[i].second);
+    }
+    return res;
 }
 
 IndexHierarchicKmeans::IndexHierarchicKmeans(
@@ -181,9 +190,9 @@ void IndexHierarchicKmeans::search(idx_t n, const float* data, idx_t k,
     FlatMatrix<idx_t> labels_matrix;
     labels_matrix.resize(n, k);
     for (size_t i = 0; i < queries.vector_count(); i++) {
-        labels_matrix.at(i, 0) = predict(layers, queries, i, opened_trees, vectors);
-        for (idx_t j = 1; j < k; j++) {
-            labels_matrix.at(i, j) = -1;
+        vector<size_t> predictions = predict(layers, queries, i, opened_trees, vectors, k);
+        for (idx_t j = 0; j < k; j++) {
+            labels_matrix.at(i, j) = (size_t(j) < predictions.size()) ? predictions[j] : -1;
         }
 
         for (idx_t j = 0; j < k; j++) {
@@ -225,8 +234,8 @@ void main_kmeans() {
 
     vector<int> predictions;
     for (size_t i = 0; i < queries.vector_count(); i++) {
-        size_t res = predict(layers, queries, i, opened_trees, vectors);
-        predictions.push_back(res);
-        std::cout << "Query " << i << ": " << res << std::endl;
+        vector<size_t> res = predict(layers, queries, i, opened_trees, vectors);
+        predictions.push_back(res[0]);
+        std::cout << "Query " << i << ": " << res[0] << std::endl;
     }
 }
