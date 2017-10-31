@@ -76,10 +76,11 @@ static vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_coun
 }
 
 // Returns best guess of index of vector closest to query.
-static size_t answer_query(
+static vector<size_t> answer_query(
         const vector<kmeans_result>& kmeans,
            const vector<FloatMatrix>& queries,
-           size_t query_number) {
+           size_t query_number,
+           size_t k_needed = 1) {
 
     assert(kmeans.size() == queries.size());
     assert(kmeans.size() > 0);
@@ -102,23 +103,27 @@ static size_t answer_query(
         }
     }
 
-    vector<float> results;
+    vector<pair<float, faiss::Index::idx_t>> results;
     for (size_t vec = 0; vec < vector_count; vec++) {
         float sum = 0;
         for (size_t part = 0; part < part_count; part++) {
             sum += table.at(part, kmeans[part].assignments[vec]);
         }
-        results.push_back(sum);
+        results.emplace_back(sum, vec);
     }
-    vector<float>::iterator max = max_element(results.begin(), results.end());
-    // debug:
-        float sum = 0;
-        size_t i = max - results.begin();
-        for (size_t part = 0; part < part_count; part++) {
-            sum += table.at(part, kmeans[part].assignments[i]);
-        }
 
-    return distance(results.begin(), max);
+    if (results.size() > k_needed) {
+        nth_element(results.begin(), results.begin() + k_needed, results.end(),
+                greater<pair<float, faiss::Index::idx_t>>());
+        results.resize(k_needed);
+    }
+    sort(results.rbegin(), results.rend());
+    vector<size_t> ret(results.size());
+    for (size_t i = 0; i < ret.size(); i++) {
+        ret[i] = results[i].second;
+    }
+
+    return ret;
 }
 
 IndexSubspaceQuantization::IndexSubspaceQuantization(
@@ -163,10 +168,9 @@ void IndexSubspaceQuantization::search(idx_t n, const float* data, idx_t k,
 
     vector<FloatMatrix> query_parts = make_parts(queries, subspace_count);
     for (size_t q = 0; q < queries.vector_count(); q++) {
-        size_t ans = answer_query(kmeans, query_parts, q);
-        labels[q * k] = ans;
-        for (idx_t j = 1; j < k; j++) {
-            labels[q * k + j] = -1;
+        vector<size_t> ans = answer_query(kmeans, query_parts, q, k);
+        for (size_t i = 0; i < size_t(k); i++) {
+            labels[q * k + i] = i < ans.size() ? ans[i] : -1;
         }
 
         for (idx_t j = 0; j < k; j++) {
@@ -225,7 +229,7 @@ int main_quantization() {
 
     for (size_t q = 0; q < queries.vector_count(); q++) {
         std::cout << "Query " << q << std::endl;
-        cout << answer_query(kmeans, query_parts, q) << endl;
+        //cout << answer_query(kmeans, query_parts, q) << endl;
     }
     return 0;
 }

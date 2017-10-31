@@ -19,6 +19,8 @@ int main(int argc, char **argv) {
         printf("Arguments missing, terminating.\n");
     } else {
         nprobe_arg = argv[1];
-        bench(get_trained_index);
+        faiss::Index* index = bench_train(get_trained_index);
+        bench_add(index);
+        bench_query(index);
     }
 }

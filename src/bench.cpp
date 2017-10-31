@@ -28,10 +28,10 @@ std::string filenames[4] = {
      "data/siftsmall/sift_base.fvecs",
      "data/siftsmall/sift_query.fvecs",
      "data/siftsmall/sift_groundtruth_IP.ivecs",
- };
+};
 #endif
 
-int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
+faiss::Index* bench_train(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     double t0 = elapsed();
 
     faiss::Index* index;
@@ -48,6 +48,15 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     index = get_trained_index(xt);
     double train_time = elapsed() - begin_train;
 
+    printf("Train time = %.6f\n", train_time);
+
+    return index;
+}
+
+void bench_add(faiss::Index* index) {
+    double t0 = elapsed();
+
+    size_t d = index->d;
 
     printf ("[%.3f s] Loading database\n", elapsed() - t0);
 
@@ -61,6 +70,13 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     double begin_add = elapsed();
     index->add(nb, xb.data.data());
     double add_time = elapsed() - begin_add;
+    printf("Add time = %.3f\n", add_time);
+}
+
+void bench_query(faiss::Index* index) {
+    double t0 = elapsed();
+
+    size_t d = index->d;
 
     FloatMatrix xq;
     size_t nq;
@@ -122,15 +138,25 @@ int bench(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
                 }
             }
         }
-        printf("R@1 = %.4f\n", n_1 / float(nq));
-        printf("R@10 = %.4f\n", n_10 / float(nq));
-        printf("R@100 = %.4f\n", n_100 / float(nq));
-        printf("Train time = %.3f\n", train_time);
-        printf("Add time = %.3f\n", add_time);
-        printf("Search time = %.3f\n", search_time);
+
+        // find intersection of ground truth top100 and our top100
+        size_t common_count = 0;
+        for (size_t i = 0; i < nq; i++) {
+            for (size_t l = 0; l < 100; l++) {
+                int current_val = gt.at(i, l);
+                for (size_t j = 0; j < 100; j++) {
+                    if (I[i * k + j] == current_val) {
+                        common_count++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        printf("Intersection = %.6f\n", common_count / float(100 * nq));
+        printf("Search time = %.6f\n", search_time);
+        printf("R@1 = %.6f\n", n_1 / float(nq));
+        printf("R@10 = %.6f\n", n_10 / float(nq));
+        printf("R@100 = %.6f\n", n_100 / float(nq));
     }
-
-    delete index;
-
-    return 0;
 }

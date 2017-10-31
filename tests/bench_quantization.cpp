@@ -17,6 +17,8 @@ int main(int argc, char **argv) {
     } else {
         subspace_count = atoi(argv[1]);
         centroid_count = atoi(argv[2]);
-        bench(get_trained_index);
+        faiss::Index* index = bench_train(get_trained_index);
+        bench_add(index);
+        bench_query(index);
     }
 }
