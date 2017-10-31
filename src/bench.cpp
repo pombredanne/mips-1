@@ -15,21 +15,21 @@ double elapsed () {
     return  tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-#if 0
-std::string filenames[4] = {
-    "data/sift1M/sift_learn.fvecs",
-    "data/sift1M/sift_base.fvecs",
-    "data/sift1M/sift_query.fvecs",
-    "data/sift1M/sift_groundtruth_IP.ivecs",
-};
-#else
+//#if 0
+//std::string filenames[4] = {
+//    "data/sift1M/sift_learn.fvecs",
+//    "data/sift1M/sift_base.fvecs",
+//    "data/sift1M/sift_query.fvecs",
+//    "data/sift1M/sift_groundtruth_IP.ivecs",
+//};
+//#else
 std::string filenames[4] = {
      "data/siftsmall/sift_learn.fvecs",
      "data/siftsmall/sift_base.fvecs",
      "data/siftsmall/sift_query.fvecs",
      "data/siftsmall/sift_groundtruth_IP.ivecs",
- };
-#endif
+};
+//#endif
 
 faiss::Index* bench_train(faiss::Index* get_trained_index(const FloatMatrix& xt)) {
     double t0 = elapsed();
@@ -138,6 +138,22 @@ void bench_query(faiss::Index* index) {
                 }
             }
         }
+
+        // find intersection of ground truth top100 and our top100
+        size_t common_count = 0;
+        for (size_t i = 0; i < nq; i++) {
+            for (size_t l = 0; l < 100; l++) {
+                int current_val = gt.at(i, l);
+                for (size_t j = 0; j < 100; j++) {
+                    if (I[i * k + j] == current_val) {
+                        common_count++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        printf("Intersection = %.6f\n", common_count / float(100 * nq));
         printf("Search time = %.6f\n", search_time);
         printf("R@1 = %.6f\n", n_1 / float(nq));
         printf("R@10 = %.6f\n", n_10 / float(nq));
