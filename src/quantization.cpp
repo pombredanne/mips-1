@@ -79,7 +79,8 @@ static vector<FloatMatrix> make_parts(const FloatMatrix& data, size_t parts_coun
 static vector<size_t> answer_query(
         const vector<kmeans_result>& kmeans,
            const vector<FloatMatrix>& queries,
-           size_t query_number) {
+           size_t query_number,
+           size_t k_needed = 1) {
 
     assert(kmeans.size() == queries.size());
     assert(kmeans.size() > 0);
@@ -102,13 +103,19 @@ static vector<size_t> answer_query(
         }
     }
 
-    vector<pair<float, size_t>> results;
+    vector<pair<float, faiss::Index::idx_t>> results;
     for (size_t vec = 0; vec < vector_count; vec++) {
         float sum = 0;
         for (size_t part = 0; part < part_count; part++) {
             sum += table.at(part, kmeans[part].assignments[vec]);
         }
         results.emplace_back(sum, vec);
+    }
+
+    if (results.size() > k_needed) {
+        nth_element(results.begin(), results.begin() + k_needed, results.end(),
+                greater<pair<float, faiss::Index::idx_t>>());
+        results.resize(k_needed);
     }
     sort(results.rbegin(), results.rend());
     vector<size_t> ret(results.size());
@@ -161,7 +168,7 @@ void IndexSubspaceQuantization::search(idx_t n, const float* data, idx_t k,
 
     vector<FloatMatrix> query_parts = make_parts(queries, subspace_count);
     for (size_t q = 0; q < queries.vector_count(); q++) {
-        vector<size_t> ans = answer_query(kmeans, query_parts, q);
+        vector<size_t> ans = answer_query(kmeans, query_parts, q, k);
         for (size_t i = 0; i < size_t(k); i++) {
             labels[q * k + i] = i < ans.size() ? ans[i] : -1;
         }
