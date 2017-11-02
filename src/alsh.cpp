@@ -18,12 +18,14 @@
 
 using namespace std;
 
-bool sort_pred(const std::pair<int,int> &left, const std::pair<int,int> &right) {
+bool sort_pred(
+        const std::pair<faiss::Index::idx_t, int> left,
+           const std::pair<faiss::Index::idx_t, int> right) {
     return left.second > right.second;
 }
 
 int IndexALSH::dot_product_hash(
-        const float* a, const float* x, const float b, size_t d) const {
+        const float* a, const float* x, const float b) const {
     float ax = faiss::fvec_inner_product(a, x, d);
     return floor((ax + b) / r);
 }
@@ -31,7 +33,7 @@ int IndexALSH::dot_product_hash(
 static float randn() {
     static random_device rd;
     static mt19937 gen(rd());
-    static normal_distribution<float> d(0,1);
+    static normal_distribution<float> d(0, 1);
 
     return d(gen);
 }
@@ -68,8 +70,7 @@ lsh_metahash_t::hash_t IndexALSH::calculate_metahash(size_t l, const float* data
         hash_vector[k] = dot_product_hash(
             metahashes[l].hashes[k].a.data(),
             data,
-            metahashes[l].hashes[k].b,
-            d);
+            metahashes[l].hashes[k].b);
     }
     return combine_hashes(hash_vector);
 }
@@ -134,7 +135,6 @@ void IndexALSH::add(idx_t n, const float* data) {
     }
 
     float maxnorm = 0;
-
     for (size_t i = 0; i < data_matrix.vector_count(); i++) {
         maxnorm = max(maxnorm, sqrt(faiss::fvec_norm_L2sqr(data_matrix.row(i), d)));
     }
@@ -143,9 +143,8 @@ void IndexALSH::add(idx_t n, const float* data) {
         scale(data_matrix.row(i), maxnorm / U, d);
 
         float vec_norm = sqrt(faiss::fvec_norm_L2sqr(data_matrix.row(i), d));
-
         for (size_t j = d; j < d + m; j++) {
-            data_matrix.at(i,j) = vec_norm;
+            data_matrix.at(i, j) = vec_norm;
             vec_norm *= vec_norm;
         }
     }
@@ -166,7 +165,7 @@ void IndexALSH::search(
         scale(queries.row(i), qnorm, d);
 
         for (size_t j = d; j < d + m; j++) {
-            queries.at(i,j) = 0.5;
+            queries.at(i, j) = 0.5;
         }
     }
 
@@ -178,4 +177,3 @@ void IndexALSH::search(
         }
     }
 }
-

@@ -208,34 +208,3 @@ void IndexHierarchicKmeans::search(idx_t n, const float* data, idx_t k,
     }
     memcpy(labels, labels_matrix.data.data(), n * k * sizeof(idx_t));
 }
-
-
-void main_kmeans() {
-    const char* input_file;
-    const char* query_file;
-    size_t m, L;
-    size_t opened_trees = 2;
-
-    input_file = "input";
-    query_file = "queries";
-    m = 3;
-    L = 2;
-
-    auto vectors_original = load_text_file<float>(input_file);
-    auto vectors = normalize_and_expand_vectors(vectors_original, m);
-
-    vector<layer_t> layers = make_layers(vectors, L);
-
-    auto queries_original = load_text_file<float>(query_file);
-    auto queries = expand_queries(queries_original, m);
-
-    assert(vectors.vector_length == queries.vector_length and
-               "Queries and Vectors dimension mismatch!");
-
-    vector<int> predictions;
-    for (size_t i = 0; i < queries.vector_count(); i++) {
-        vector<size_t> res = predict(layers, queries, i, opened_trees, vectors);
-        predictions.push_back(res[0]);
-        std::cout << "Query " << i << ": " << res[0] << std::endl;
-    }
-}

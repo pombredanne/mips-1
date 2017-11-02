@@ -170,66 +170,10 @@ void IndexSubspaceQuantization::search(idx_t n, const float* data, idx_t k,
     for (size_t q = 0; q < queries.vector_count(); q++) {
         vector<size_t> ans = answer_query(kmeans, query_parts, q, k);
         for (size_t i = 0; i < size_t(k); i++) {
-            labels[q * k + i] = i < ans.size() ? ans[i] : -1;
-        }
-
-        for (idx_t j = 0; j < k; j++) {
-            idx_t lab = labels[q * k + j];
-            if (lab != -1) {
-                // TODO: write distances...
-                /*
-                distances[q * k + j] = faiss::fvec_inner_product(
-                    vectors_original.row(lab),
-                    queries_original.row(i),
-                    d
-                );
-                */
-            }
+            idx_t lab = (i < ans.size()) ? ans[i] : -1;
+            labels[q * k + i] = lab;
+            // TODO write distances...
         }
     }
 
-}
-
-int main_quantization() {
-    int parts_count = 2;
-    int k = 3;
-
-    FloatMatrix data = load_text_file<float>("input");
-    FloatMatrix queries = load_text_file<float>("queries");
-    std::cout << "Data:\n";
-    data.print();
-    std::cout << "Queries:\n";
-    queries.print();
-    vector<size_t> permutation = prepare_permutation(data.vector_length);
-    std::cout << "Permutation:\n";
-    print_vector(permutation);
-
-    for (size_t i = 0; i < data.vector_count(); i++) {
-        apply_permutation(data.row(i), permutation);
-    }
-    for (size_t i = 0; i < queries.vector_count(); i++) {
-        apply_permutation(queries.row(i), permutation);
-    }
-    std::cout << "Permuted data:\n";
-    data.print();
-    std::cout << "Permuted queries:\n";
-    queries.print();
-
-    auto parts = make_parts(data, parts_count);
-    print_parts(parts);
-    auto query_parts = make_parts(queries, parts_count);
-    print_parts(query_parts);
-
-    vector<kmeans_result> kmeans(parts_count);
-    for(int i = 0; i < parts_count; i++) {
-        cout << "Clustering for part " << i << endl;
-        kmeans[i] = perform_kmeans(parts[i], k);
-    }
-    std::cout << "Preprocessing phase finished." << std::endl;
-
-    for (size_t q = 0; q < queries.vector_count(); q++) {
-        std::cout << "Query " << q << std::endl;
-        //cout << answer_query(kmeans, query_parts, q) << endl;
-    }
-    return 0;
 }
