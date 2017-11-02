@@ -121,7 +121,9 @@ IndexALSH::IndexALSH(
 }
 
 void IndexALSH::reset() {
-    metahashes.clear();
+	for (size_t l = 0; l < L; l++) {
+		metahashes[l].table.clear();
+	}
 }
 
 void IndexALSH::add(idx_t n, const float* data) {
