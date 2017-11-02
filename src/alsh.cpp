@@ -159,15 +159,6 @@ void expand(FloatMatrix &vec, vector<float>& norms, float max_norm, size_t lengt
                 vec.at(i,j) = 0.5f;
             }
         }
-
-        for (auto j = length + m; j < length + 2*m; j++) {
-            if (!queries) {
-                vec.at(i,j) = 0.5f;
-            } else {
-                vec.at(i,j) = vec_norm;
-                vec_norm *= vec_norm;
-            }
-        }
     }
 }
 
@@ -263,10 +254,13 @@ void IndexALSH::reset() {
     b_scalars.data.clear();
     maximum_norm = 0.0f;
 }
+
 void IndexALSH::add(idx_t n, const float* data) {
     FloatMatrix data_matrix;
-    data_matrix.resize(n, d);
-    memcpy(data_matrix.data.data(), data, n * d * sizeof(float));
+    data_matrix.resize(n, d + m);
+    for (idx_t i = 0; i < n; i++) {
+        memcpy(data_matrix.row(i), data + i * d, d * sizeof(float));
+    }
     vector<float> vector_norms(data_matrix.vector_count());
     hash_tables.resize(L);
     a_vectors.resize(L);
@@ -277,6 +271,7 @@ void IndexALSH::add(idx_t n, const float* data) {
     for (size_t i = 0; i < data_matrix.vector_count(); i++) {
         vector_norms[i] = euclidean_norm(data_matrix.row(i),d);
     }
+    // TODO why not STL? why not inside expand?
     maximum_norm = max_value(vector_norms);
 
     expand(data_matrix, vector_norms, maximum_norm, d, false);
@@ -284,10 +279,13 @@ void IndexALSH::add(idx_t n, const float* data) {
     hash_vectors(data_matrix,hash_tables, a_vectors, b_scalars, d);
 
 }
+
 void IndexALSH::search(idx_t n, const float* data, idx_t k, float* distances, idx_t* labels) const {
     FloatMatrix queries;
-    queries.resize(n, d);
-    memcpy(queries.data.data(), data, n * d * sizeof(float));
+    queries.resize(n, d + m);
+    for (idx_t i = 0; i < n; i++) {
+        memcpy(queries.row(i), data + i * d, d * sizeof(float));
+    }
     vector<float> query_norm(d);
     expand(queries, query_norm, maximum_norm, d, true);
     for (size_t q = 0; q < queries.vector_count(); q++) {
