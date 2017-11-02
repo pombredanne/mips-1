@@ -3,7 +3,7 @@
 #include "../src/alsh.h"
 
 faiss::Index* get_trained_index(const FloatMatrix& xt) {
-    faiss::Index* index = new IndexALSH(xt.vector_length, 6, 32, 10.0, 0.9, 2);
+    faiss::Index* index = new IndexALSH(xt.vector_length, 6, 32, 2.5, 0.9);
     index->train(xt.vector_count(), xt.data.data());
     return index;
 }

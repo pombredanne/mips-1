@@ -18,7 +18,7 @@ struct lsh_metahash_t {
 };
 
 struct IndexALSH: public faiss::Index {
-    IndexALSH(size_t dim, size_t L, size_t K, float r, float U, size_t m);
+    IndexALSH(size_t dim, size_t L, size_t K, float r = 2.5, float U = 0.83, size_t m = 3);
     void add(idx_t n, const float* data);
     void search(idx_t n, const float* data, idx_t k, float* distances, idx_t* labels) const;
     void reset();
