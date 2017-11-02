@@ -4,6 +4,19 @@
 #include <map>
 #include <set>
 
+
+struct lsh_hash_t {
+	std::vector<float> a;
+	float b;
+};
+
+struct lsh_metahash_t {
+	typedef unsigned long long hash_t;
+
+	std::vector<lsh_hash_t> hashes;
+	std::map<hash_t, std::set<faiss::Index::idx_t> > table;
+};
+
 struct IndexALSH: public faiss::Index {
     IndexALSH(size_t dim, size_t L, size_t K, float r, float U, size_t m);
     void add(idx_t n, const float* data);
@@ -11,10 +24,7 @@ struct IndexALSH: public faiss::Index {
     void reset();
     // void train(idx_t n, const float* data);
 
-    std::vector<std::map<std::vector<int>, std::set<int>>> hash_tables;
-    std::vector<FloatMatrix> a_vectors;
-    FloatMatrix b_scalars;
-    float maximum_norm;
+	std::vector<lsh_metahash_t> metahashes;
 
     
     // Parameters:
@@ -24,15 +34,8 @@ struct IndexALSH: public faiss::Index {
     float U;
     size_t m;
 
-    void initialize_random_data(std::vector<FloatMatrix> &a_vectors, FloatMatrix &b_scalars, size_t d);
-    void hash_vectors(FloatMatrix& data, 
-            std::vector<std::map<std::vector<int>, std::set<int>>>& hash_tables, 
-            std::vector<FloatMatrix>& a_vectors, 
-            FloatMatrix& b_scalars, size_t d);
+    void hash_vectors(FloatMatrix& data);
     int dot_product_hash(const float* a, const float* x, const float b, size_t d) const;
-    size_t answer_query(float *query, 
-            const std::vector<FloatMatrix>& a_vectors, 
-            const FloatMatrix& b_scalars, 
-            const std::vector<std::map<std::vector<int>, std::set<int>>> hash_tables,
-               size_t d) const;
+	std::vector<idx_t> answer_query(float *query, size_t k_needed = 1) const;
+	lsh_metahash_t::hash_t calculate_metahash(size_t l, const float* data) const;
 };
