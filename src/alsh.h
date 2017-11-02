@@ -23,4 +23,16 @@ struct IndexALSH: public faiss::Index {
     float r;
     float U;
     size_t m;
+
+    void initialize_random_data(std::vector<FloatMatrix> &a_vectors, FloatMatrix &b_scalars, size_t d);
+    void hash_vectors(FloatMatrix& data, 
+            std::vector<std::map<std::vector<int>, std::set<int>>>& hash_tables, 
+            std::vector<FloatMatrix>& a_vectors, 
+            FloatMatrix& b_scalars, size_t d);
+    int dot_product_hash(const float* a, const float* x, const float b, size_t d) const;
+    size_t answer_query(float *query, 
+            const std::vector<FloatMatrix>& a_vectors, 
+            const FloatMatrix& b_scalars, 
+            const std::vector<std::map<std::vector<int>, std::set<int>>> hash_tables,
+               size_t d) const;
 };
