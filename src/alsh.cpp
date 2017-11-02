@@ -23,7 +23,7 @@ bool sort_pred(const std::pair<int,int> &left, const std::pair<int,int> &right) 
 }
 
 int IndexALSH::dot_product_hash(
-		const float* a, const float* x, const float b, size_t d) const {
+        const float* a, const float* x, const float b, size_t d) const {
     float ax = faiss::fvec_inner_product(a, x, d);
     return floor((ax + b) / r);
 }
@@ -45,60 +45,60 @@ static float uniform(float low, float high) {
 }
 
 static lsh_metahash_t::hash_t combine_hashes(vector<int> values) {
-	lsh_metahash_t::hash_t seed = 0;
-	for (size_t i = 0; i < values.size(); i++) {
-		int v = values[i];
-		seed ^= v + 0x9e3779b9 + (seed<<6) + (seed>>2);
-	}
-	return seed;
+    lsh_metahash_t::hash_t seed = 0;
+    for (size_t i = 0; i < values.size(); i++) {
+        int v = values[i];
+        seed ^= v + 0x9e3779b9 + (seed<<6) + (seed>>2);
+    }
+    return seed;
 }
 
 void IndexALSH::hash_vectors(FloatMatrix &data) {
 #pragma omp parallel for
     for (size_t l = 0; l < L; l++) {
         for (size_t i = 0; i < data.vector_count(); i++) {
-			metahashes[l].table[calculate_metahash(l, data.row(i))].insert(i);
+            metahashes[l].table[calculate_metahash(l, data.row(i))].insert(i);
         }
     }
 }
 
 lsh_metahash_t::hash_t IndexALSH::calculate_metahash(size_t l, const float* data) const {
-	vector<int> hash_vector(K);
-	for (size_t k = 0; k < K; k++) {
-		hash_vector[k] = dot_product_hash(
-			metahashes[l].hashes[k].a.data(),
-			data,
-			metahashes[l].hashes[k].b,
-			d);
-	}
-	return combine_hashes(hash_vector);
+    vector<int> hash_vector(K);
+    for (size_t k = 0; k < K; k++) {
+        hash_vector[k] = dot_product_hash(
+            metahashes[l].hashes[k].a.data(),
+            data,
+            metahashes[l].hashes[k].b,
+            d);
+    }
+    return combine_hashes(hash_vector);
 }
 
 vector<faiss::Index::idx_t> IndexALSH::answer_query(float *query, size_t k_needed) const {
     map<idx_t, int> score;
     for (size_t l = 0; l < L; l++) {
-		const auto it = metahashes[l].table.find(calculate_metahash(l, query));
-		if (it != metahashes[l].table.end()) {
-			// Increase score of all vectors colliding with query in this metahash.
-			for (const auto vec_id: it->second) {
-				score[vec_id]++;
-			}
-		}
+        const auto it = metahashes[l].table.find(calculate_metahash(l, query));
+        if (it != metahashes[l].table.end()) {
+            // Increase score of all vectors colliding with query in this metahash.
+            for (const auto vec_id: it->second) {
+                score[vec_id]++;
+            }
+        }
     }
     vector<pair<idx_t, int> > score_vector(score.begin(), score.end());
-	if (score_vector.size() > k_needed) {
-		nth_element(
-			score_vector.begin(), 
-			score_vector.begin() + k_needed, 
-			score_vector.end(),
-			sort_pred);
-		score_vector.resize(k_needed);
-	}
+    if (score_vector.size() > k_needed) {
+        nth_element(
+            score_vector.begin(), 
+            score_vector.begin() + k_needed, 
+            score_vector.end(),
+            sort_pred);
+        score_vector.resize(k_needed);
+    }
     sort(score_vector.begin(), score_vector.end(), sort_pred);
-	vector<idx_t> res;
-	for (size_t i = 0; i < score_vector.size(); i++) {
-		res.push_back(score_vector[i].first);
-	}
+    vector<idx_t> res;
+    for (size_t i = 0; i < score_vector.size(); i++) {
+        res.push_back(score_vector[i].first);
+    }
     return res;
 }
 
@@ -107,23 +107,23 @@ IndexALSH::IndexALSH(
         Index(dim, faiss::METRIC_INNER_PRODUCT),
         L(L), K(K), r(r), U(U), m(m) {
 
-	// Initialize metahashes' coefficients.
-	metahashes.resize(L);
+    // Initialize metahashes' coefficients.
+    metahashes.resize(L);
     for (size_t l = 0; l < L; l++) {
-		metahashes[l].hashes.resize(K);
+        metahashes[l].hashes.resize(K);
         for (size_t k = 0; k < K; k++) {
             for (size_t i = 0; i < d + m; i++) {
-				metahashes[l].hashes[k].a.push_back(randn());
+                metahashes[l].hashes[k].a.push_back(randn());
             }
-			metahashes[l].hashes[k].b = uniform(0, r);
+            metahashes[l].hashes[k].b = uniform(0, r);
         }
     }
 }
 
 void IndexALSH::reset() {
-	for (size_t l = 0; l < L; l++) {
-		metahashes[l].table.clear();
-	}
+    for (size_t l = 0; l < L; l++) {
+        metahashes[l].table.clear();
+    }
 }
 
 void IndexALSH::add(idx_t n, const float* data) {
@@ -133,7 +133,7 @@ void IndexALSH::add(idx_t n, const float* data) {
         memcpy(data_matrix.row(i), data + i * d, d * sizeof(float));
     }
 
-	float maxnorm = 0;
+    float maxnorm = 0;
 
     for (size_t i = 0; i < data_matrix.vector_count(); i++) {
         maxnorm = max(maxnorm, sqrt(faiss::fvec_norm_L2sqr(data_matrix.row(i), d)));
@@ -154,8 +154,8 @@ void IndexALSH::add(idx_t n, const float* data) {
 }
 
 void IndexALSH::search(
-		idx_t n, const float* data, idx_t k,
-	   	float* distances, idx_t* labels) const {
+        idx_t n, const float* data, idx_t k,
+           float* distances, idx_t* labels) const {
     FloatMatrix queries;
     queries.resize(n, d + m);
     for (idx_t i = 0; i < n; i++) {
@@ -173,7 +173,7 @@ void IndexALSH::search(
     for (size_t q = 0; q < queries.vector_count(); q++) {
         vector<idx_t> ans = answer_query(queries.row(q), k);
         for (idx_t j = 0; j < k; j++) {
-			idx_t lab = (size_t(j) < ans.size()) ? ans[j] : -1;
+            idx_t lab = (size_t(j) < ans.size()) ? ans[j] : -1;
             labels[q * k + j] = lab;
         }
     }

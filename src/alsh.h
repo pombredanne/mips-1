@@ -6,15 +6,15 @@
 
 
 struct lsh_hash_t {
-	std::vector<float> a;
-	float b;
+    std::vector<float> a;
+    float b;
 };
 
 struct lsh_metahash_t {
-	typedef unsigned long long hash_t;
+    typedef unsigned long long hash_t;
 
-	std::vector<lsh_hash_t> hashes;
-	std::map<hash_t, std::set<faiss::Index::idx_t> > table;
+    std::vector<lsh_hash_t> hashes;
+    std::map<hash_t, std::set<faiss::Index::idx_t> > table;
 };
 
 struct IndexALSH: public faiss::Index {
@@ -24,7 +24,7 @@ struct IndexALSH: public faiss::Index {
     void reset();
     // void train(idx_t n, const float* data);
 
-	std::vector<lsh_metahash_t> metahashes;
+    std::vector<lsh_metahash_t> metahashes;
 
     
     // Parameters:
@@ -36,6 +36,6 @@ struct IndexALSH: public faiss::Index {
 
     void hash_vectors(FloatMatrix& data);
     int dot_product_hash(const float* a, const float* x, const float b, size_t d) const;
-	std::vector<idx_t> answer_query(float *query, size_t k_needed = 1) const;
-	lsh_metahash_t::hash_t calculate_metahash(size_t l, const float* data) const;
+    std::vector<idx_t> answer_query(float *query, size_t k_needed = 1) const;
+    lsh_metahash_t::hash_t calculate_metahash(size_t l, const float* data) const;
 };
