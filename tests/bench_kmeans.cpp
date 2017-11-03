@@ -6,9 +6,18 @@ size_t m;
 float U;
 size_t layers_count;
 size_t opened_trees;
+int augtype = 1;
 
 faiss::Index* get_trained_index(const FloatMatrix& xt) {
-    faiss::Index* index = new IndexHierarchicKmeans(xt.vector_length, m, layers_count, opened_trees, U);
+    MipsAugmentation* aug;
+    size_t dim = xt.vector_length;
+    switch (augtype) {
+    case 0: aug = new MipsAugmentationNeyshabur(dim); break;
+    case 1: aug = new MipsAugmentationShrivastava(dim, m, U); break;
+    case 2: aug = new MipsAugmentationNone(dim); break;
+    default: exit(1);
+    }
+    faiss::Index* index = new IndexHierarchicKmeans(dim, layers_count, opened_trees, aug);
     index->train(xt.vector_count(), xt.data.data());
     return index;
 }

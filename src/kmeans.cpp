@@ -110,14 +110,16 @@ static vector<size_t> predict(const vector<layer_t>& layers, FloatMatrix& querie
 }
 
 IndexHierarchicKmeans::IndexHierarchicKmeans(
-        size_t dim, size_t m, size_t layers_count, size_t opened_trees, float U):
+        size_t dim, size_t layers_count, size_t opened_trees, MipsAugmentation* aug):
     Index(dim, faiss::METRIC_INNER_PRODUCT),
-    layers_count(layers_count), m(m), U(U), opened_trees(opened_trees) {}
+    layers_count(layers_count), opened_trees(opened_trees), augmentation(aug)
+{
+}
 
 void IndexHierarchicKmeans::add(idx_t n, const float* data) {
     vectors_original.resize(n, d);
     memcpy(vectors_original.data.data(), data, n * d * sizeof(float));
-    vectors = shrivastava_extend(data, n, d, m, U);
+    vectors = augmentation->extend(data, n);
     layers = make_layers(vectors, layers_count);
 }
 
@@ -132,7 +134,7 @@ void IndexHierarchicKmeans::search(idx_t n, const float* data, idx_t k,
     FloatMatrix queries_original;
     queries_original.resize(n, d);
     memcpy(queries_original.data.data(), data, n * d * sizeof(float));
-    FloatMatrix queries = shrivastava_extend_queries(data, n, d, m);
+    FloatMatrix queries = augmentation->extend_queries(data, n);
 
     FlatMatrix<idx_t> labels_matrix;
     labels_matrix.resize(n, k);

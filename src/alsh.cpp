@@ -104,16 +104,16 @@ vector<faiss::Index::idx_t> IndexALSH::answer_query(float *query, size_t k_neede
 }
 
 IndexALSH::IndexALSH(
-        size_t dim, size_t L, size_t K, float r, float U, size_t m):
+        size_t dim, size_t L, size_t K, float r, MipsAugmentation* aug):
         Index(dim, faiss::METRIC_INNER_PRODUCT),
-        L(L), K(K), r(r), U(U), m(m) {
+        L(L), K(K), r(r), augmentation(aug) {
 
     // Initialize metahashes' coefficients.
     metahashes.resize(L);
     for (size_t l = 0; l < L; l++) {
         metahashes[l].hashes.resize(K);
         for (size_t k = 0; k < K; k++) {
-            for (size_t i = 0; i < d + m; i++) {
+            for (size_t i = 0; i < d + aug->m; i++) {
                 metahashes[l].hashes[k].a.push_back(randn());
             }
             metahashes[l].hashes[k].b = uniform(0, r);
@@ -128,7 +128,7 @@ void IndexALSH::reset() {
 }
 
 void IndexALSH::add(idx_t n, const float* data) {
-    FloatMatrix data_matrix = shrivastava_extend(data, n, d, m, U);
+    FloatMatrix data_matrix = augmentation->extend(data, n);
     hash_vectors(data_matrix);
 }
 
@@ -136,7 +136,7 @@ void IndexALSH::search(
         idx_t n, const float* data, idx_t k,
            float* distances, idx_t* labels) const {
 
-    FloatMatrix queries = shrivastava_extend_queries(data, n, d, m);
+    FloatMatrix queries = augmentation->extend_queries(data, n);
 
     for (size_t q = 0; q < queries.vector_count(); q++) {
         vector<idx_t> ans = answer_query(queries.row(q), k);
