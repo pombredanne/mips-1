@@ -4,6 +4,8 @@
 #include "../faiss/IndexFlat.h"
 #include "../faiss/utils.h"
 
+#include <algorithm>
+
 
 kmeans_result perform_kmeans(const FlatMatrix<float>& matrix, size_t k) {
     kmeans_result kr;
@@ -35,4 +37,45 @@ void scale(float* vec, float alpha, size_t size) {
     for (size_t i = 0; i < size; i++) {
         vec[i] /= alpha;
     }
+}
+
+FloatMatrix shrivastava_extend(const float* data, size_t nvecs, size_t dim, size_t m, float U) {
+    FloatMatrix data_matrix;
+    data_matrix.resize(nvecs, dim + m);
+    for (size_t i = 0; i < nvecs; i++) {
+        memcpy(data_matrix.row(i), data + i * dim, dim * sizeof(float));
+    }
+
+    double maxnorm = 0;
+    for (size_t i = 0; i < data_matrix.vector_count(); i++) {
+        maxnorm = std::max(maxnorm, sqrt(faiss::fvec_norm_L2sqr(data_matrix.row(i), dim)));
+    }
+
+    for (size_t i = 0; i < data_matrix.vector_count(); i++) {
+        scale(data_matrix.row(i), maxnorm / U, dim);
+
+        float vec_norm = sqrt(faiss::fvec_norm_L2sqr(data_matrix.row(i), dim));
+        for (size_t j = dim; j < dim + m; j++) {
+            data_matrix.at(i, j) = 0.5 - vec_norm;
+            vec_norm *= vec_norm;
+        }
+    }
+    return data_matrix;
+}
+
+FloatMatrix shrivastava_extend_queries(const float* data, size_t nvecs, size_t dim, size_t m) {
+    FloatMatrix queries;
+    queries.resize(nvecs, dim + m);
+    for (size_t i = 0; i < nvecs; i++) {
+        memcpy(queries.row(i), data + i * dim, dim * sizeof(float));
+    }
+    for (size_t i = 0; i < queries.vector_count(); i++) {
+        float qnorm = sqrt(faiss::fvec_norm_L2sqr(queries.row(i), dim));
+        scale(queries.row(i), qnorm, dim);
+
+        for (size_t j = dim; j < dim + m; j++) {
+            queries.at(i, j) = 0.0;
+        }
+    }
+    return queries;
 }

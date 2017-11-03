@@ -128,46 +128,15 @@ void IndexALSH::reset() {
 }
 
 void IndexALSH::add(idx_t n, const float* data) {
-    FloatMatrix data_matrix;
-    data_matrix.resize(n, d + m);
-    for (idx_t i = 0; i < n; i++) {
-        memcpy(data_matrix.row(i), data + i * d, d * sizeof(float));
-    }
-
-    float maxnorm = 0;
-    for (size_t i = 0; i < data_matrix.vector_count(); i++) {
-        maxnorm = max(maxnorm, sqrt(faiss::fvec_norm_L2sqr(data_matrix.row(i), d)));
-    }
-
-    for (size_t i = 0; i < data_matrix.vector_count(); i++) {
-        scale(data_matrix.row(i), maxnorm / U, d);
-
-        float vec_norm = sqrt(faiss::fvec_norm_L2sqr(data_matrix.row(i), d));
-        for (size_t j = d; j < d + m; j++) {
-            data_matrix.at(i, j) = vec_norm;
-            vec_norm *= vec_norm;
-        }
-    }
-
+    FloatMatrix data_matrix = shrivastava_extend(data, n, d, m, U);
     hash_vectors(data_matrix);
 }
 
 void IndexALSH::search(
         idx_t n, const float* data, idx_t k,
            float* distances, idx_t* labels) const {
-    FloatMatrix queries;
-    queries.resize(n, d + m);
-    for (idx_t i = 0; i < n; i++) {
-        memcpy(queries.row(i), data + i * d, d * sizeof(float));
-    }
-    for (size_t i = 0; i < queries.vector_count(); i++) {
-        float qnorm = sqrt(faiss::fvec_norm_L2sqr(queries.row(i), d));
-        scale(queries.row(i), qnorm, d);
 
-        for (size_t j = d; j < d + m; j++) {
-            queries.at(i, j) = 0.5;
-        }
-    }
+    FloatMatrix queries = shrivastava_extend_queries(data, n, d, m);
 
     for (size_t q = 0; q < queries.vector_count(); q++) {
         vector<idx_t> ans = answer_query(queries.row(q), k);

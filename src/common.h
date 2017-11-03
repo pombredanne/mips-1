@@ -40,6 +40,9 @@ kmeans_result perform_kmeans(const FloatMatrix& matrix, size_t k);
 
 void scale(float* vec, float alpha, size_t size);
 
+FloatMatrix shrivastava_extend(const float* data, size_t nvecs, size_t dim, size_t m, float U);
+FloatMatrix shrivastava_extend_queries(const float* data, size_t nvecs, size_t dim, size_t m);
+
 
 #include "common.inc.h"
 
