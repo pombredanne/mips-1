@@ -110,14 +110,14 @@ static vector<size_t> predict(const vector<layer_t>& layers, FloatMatrix& querie
 }
 
 IndexHierarchicKmeans::IndexHierarchicKmeans(
-        size_t dim, size_t m, size_t layers_count, size_t opened_trees):
+        size_t dim, size_t m, size_t layers_count, size_t opened_trees, float U):
     Index(dim, faiss::METRIC_INNER_PRODUCT),
-    layers_count(layers_count), m(m), opened_trees(opened_trees) {}
+    layers_count(layers_count), m(m), U(U), opened_trees(opened_trees) {}
 
 void IndexHierarchicKmeans::add(idx_t n, const float* data) {
     vectors_original.resize(n, d);
     memcpy(vectors_original.data.data(), data, n * d * sizeof(float));
-    vectors = shrivastava_extend(data, n, d, m, 0.9);
+    vectors = shrivastava_extend(data, n, d, m, U);
     layers = make_layers(vectors, layers_count);
 }
 
