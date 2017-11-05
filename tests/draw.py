@@ -7,7 +7,7 @@ import argparse
 
 
 MARKER_SIZE = 3.5
-WIDTH   = 0.5
+WIDTH     = 0.5
 TIME_DS   = 8
 RECALL_DS = 6  # recall at 10
 INTER_DS  = 9  # intersection
@@ -98,5 +98,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args)
-
-
