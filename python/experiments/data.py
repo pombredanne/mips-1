@@ -7,202 +7,8 @@ import scipy.sparse as sp
 import torch as th
 from torch.autograd import Variable as V
 from torch.utils.data.dataset import Dataset
-from torch.utils.data.sampler import Sampler
-
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-
-def get_data():
-    RAW_PATH = '../data/DeliciousLarge/deliciousLarge_train.txt'
-    X_PATH = '../data/DeliciousLarge/X_train.csr.npz'
-    Y_PATH = '../data/DeliciousLarge/Y_train.csr.npz'
-
-    if os.path.exists(X_PATH):
-        logging.info(f"Data already present at {X_PATH}. Loading...")
-
-        X = load_csr(X_PATH)
-        Y = load_csr(Y_PATH)
-
-    else:
-        logging.info(f"Data not found, I'm going to prepare it and store at {X_PATH}.")
-
-        X, Y = libsvm_to_csr(RAW_PATH)
-
-        save_csr(X, X_PATH)
-        save_csr(Y, Y_PATH)
-
-    logging.info("Trimming csr matrices...")
-
-    X_col_mask = trim(X, 0, t=5)
-    Y_col_mask = trim(Y, 0, t=3)
-
-    X = X[:, X_col_mask]
-    Y = Y[:, Y_col_mask]
-
-    X_row_mask = trim(X, 1, t=1)
-    Y_row_mask = trim(Y, 1, t=1)
-
-    mask = X_row_mask & Y_row_mask
-
-    X = X[mask, :]
-    Y = Y[mask, :]
-
-    logging.info(f"Prepared data of shapes: {X.shape, Y.shape}")
-
-    return X, Y
-
-
-class CSRDataset(Dataset):
-    def __init__(self, X_csr, Y_csr, sorted=False):
-        assert X_csr.shape[0] == Y_csr.shape[0]
-        self.X_csr = X_csr
-        self.Y_csr = Y_csr
-        self.sorted_indices = None
-
-        if sorted:
-            self.sort()
-
-    def sort(self):
-        row_sizes = np.diff(self.X_csr.indptr)
-        self.sorted_indices = np.argsort(row_sizes)
-
-        return self
-
-    def randomize(self):
-        self.sorted_indices = None
-
-        return self
-
-    def __getitem__(self, index):
-        if self.sorted_indices is not None:
-            index = self.sorted_indices[index]
-
-        row = self.X_csr[index]
-
-        return (row.indices, row.data), self.Y_csr[index].indices
-
-    def __len__(self):
-        return self.X_csr.shape[0]
-
-
-class LocallySequentialSampler(Sampler):
-    # noinspection PyMissingConstructor
-    def __init__(self, data_source, window_size):
-        self.data_source = data_source
-        self.window_size = window_size
-        self.n_steps = len(self.data_source) // self.window_size
-
-    def __iter__(self):
-        window_indices = th.randperm(self.n_steps).long()
-
-        for w_idx in window_indices:
-            for i in range(self.window_size):
-                yield w_idx * self.window_size + i
-
-    def __len__(self):
-        return self.n_steps * self.window_size
-
-
-class Preprocessor:
-    def __init__(self, n_labels,  scale_y=True,
-                 log_transform=True, use_bag=False, max_repeat=1, subsample=np.inf):
-
-        self.n_labels      = n_labels
-        self.scale_y       = scale_y
-        self.log_transform = log_transform
-        self.use_bag       = use_bag
-        self.max_repeat    = max_repeat
-        self.subsample     = subsample
-
-    def x_transform(self, x):
-        indices, weights = x
-
-        if len(indices) > self.subsample:
-            _inds = np.random.choice(np.arange(len(indices)), size=self.subsample, replace=False)
-            indices = [int(indices[i])   for i in _inds]
-            weights = [float(weights[i]) for i in _inds]
-
-        weights = th.FloatTensor(weights)
-
-        if self.log_transform:
-            weights = th.log1p(weights)
-
-        if self.use_bag:
-            counts = th.clamp(th.round(weights), 1, self.max_repeat)
-            indices = [int(item)
-                       for idx, cnt in zip(indices, counts)
-                       for item in [idx] * int(cnt)]
-
-        indices = th.LongTensor(indices)
-        return indices, weights
-
-    def y_transform(self, labels):
-        assert len(labels) > 0
-
-        value = 1 if not self.scale_y else 1. / len(labels)
-        y = np.zeros((self.n_labels, ), dtype=np.float32)
-        y[labels] = value
-
-        return th.from_numpy(y)
-
-    def collate_fn(self, batch):
-        batch = [(self.x_transform(x), self.y_transform(y))
-                 for x, y in batch]
-
-        xs, ys = zip(*batch)
-        _indices, _weights = zip(*xs)
-
-        if self.use_bag:
-            # prepare offsets for EmbeddingBag
-
-            indices = th.cat(_indices)
-
-            offsets, offset = [], 0
-            for I in _indices:
-                offsets.append(offset)
-                offset += len(I)
-            offsets = th.LongTensor(offsets)
-
-            return (indices, offsets), th.stack(ys)
-
-        else:
-            # zero-pad to the longest sequence
-
-            max_len = max(len(I) for I in _indices)
-            shape   = (len(_indices), max_len)
-
-            indices = th.zeros(*shape).long()
-            weights = th.zeros(*shape)
-
-            for i, (I, W) in enumerate(zip(_indices, _weights)):
-                indices[i, :len(I)] = (I+1)
-                weights[i, :len(W)] = W
-
-            return (indices, weights), th.stack(ys)
-
-
-def to_cuda_var(*x, cuda=False, var=True, volatile=False):
-
-    if len(x) == 1:
-        x, = x
-
-    typ = type(x)
-
-    if typ in {list, tuple}:
-        return typ(to_cuda_var(item, cuda=cuda) for item in x)
-
-    if var:
-        if cuda:
-            x = x.cuda(async=True)
-
-        x = V(x, volatile=volatile)
-
-    else:
-        if cuda:
-            x = x.cuda()
-
-    return x
 
 
 def libsvm_to_csr(path):
@@ -257,11 +63,187 @@ def libsvm_to_csr(path):
         return X, Y
 
 
-def trim(X, dim, t):
-    X       = X.tocsc() if (dim == 0) else X.tocsr()
-    mask    = np.array((X > 0).sum(dim) >= t).ravel()
+def trim(_X, dim, t):
+    _X   = _X.tocsc() if (dim == 0) else _X.tocsr()
+    _mask = np.array((_X > 0).sum(dim) >= t).ravel()
 
-    return mask
+    return _mask
+
+
+def get_data(path, name='train', force=False,
+             min_words=1, min_labels=1,
+             words_mask=None, labels_mask=None):
+
+    # data paths
+    RAW_PATH = os.path.join(path, f'{name}.txt')
+    X_PATH   = os.path.join(path, f'X_{name}.csr.npz')
+    Y_PATH   = os.path.join(path, f'Y_{name}.csr.npz')
+
+    # data already read
+    if os.path.exists(X_PATH) and force is False:
+        logging.info(f"Data already present at {X_PATH}. Loading...")
+
+        X = load_csr(X_PATH)
+        Y = load_csr(Y_PATH)
+
+        return X, Y
+
+    # data only in libsvm
+    logging.info(f"Data not found or `force` flag was passed, I'm going to prepare it and store at {X_PATH}.")
+
+    X, Y = libsvm_to_csr(RAW_PATH)
+
+    # compute masks to get rid of examples with too little words or labels
+    if words_mask is None:
+        words_mask = trim(X, dim=0, t=min_words)
+        labels_mask = trim(Y, dim=0, t=min_labels)
+    else:
+        assert labels_mask is not None
+
+    # discard unwanted columns
+    X = X.tocsc()[:, words_mask].tocsr()
+    Y = Y.tocsc()[:, labels_mask].tocsr()
+
+    # make sure each example has at leas one nonzero feature and one label
+    row_mask = trim(X, dim=1, t=1) & trim(Y, dim=1, t=1)
+    X = X[row_mask, :]  # type: sp.csr_matrix
+    Y = Y[row_mask, :]
+
+    # fix csr matrices
+    X.sort_indices()
+    X.sum_duplicates()
+    Y.sort_indices()
+    Y.sum_duplicates()
+
+    # save the result
+    save_csr(X, X_PATH)
+    save_csr(Y, Y_PATH)
+
+    return X, Y, words_mask, labels_mask
+
+
+class CSRDataset(Dataset):
+    def __init__(self, X_csr, Y_csr):
+        assert X_csr.shape[0] == Y_csr.shape[0]
+
+        self.X_csr = X_csr
+        self.Y_csr = Y_csr
+        self.sorted_indices = None
+
+    def __getitem__(self, index):
+        X_row = self.X_csr[index]
+        Y_row = self.Y_csr[index]
+
+        return X_row.indices, Y_row.indices
+
+    def __len__(self):
+        return self.X_csr.shape[0]
+
+
+class Preprocessor:
+    def __init__(self, n_labels,  scale_y=True, sample_y=False):
+
+        self.n_labels       = n_labels
+        self.scale_y        = scale_y
+        self.sample_y       = sample_y
+
+        if self.sample_y:
+            self.merge_fn = th.LongTensor
+        else:
+            self.merge_fn = th.stack
+
+    def x_transform(self, x):
+        # noinspection PyArgumentList
+        return th.LongTensor(x)
+
+    def y_transform(self, labels):
+        assert len(labels) > 0
+
+        if self.sample_y:
+            return int(np.random.choice(labels))
+
+        value = 1 if (not self.scale_y) else 1. / len(labels)
+        y = np.zeros((self.n_labels, ), dtype=np.float32)
+        y[labels] = value
+
+        return th.from_numpy(y)
+
+    def _collate_bag(self, xs, ys):
+        indices = th.cat(xs)
+
+        offsets, cur_offset = [], 0
+
+        for I in xs:
+            offsets.append(cur_offset)
+            cur_offset += len(I)
+
+        # noinspection PyArgumentList
+        offsets = th.LongTensor(offsets)
+
+        return (indices, offsets), self.merge_fn(ys)
+
+    def collate_fn(self, batch):
+        batch = [(self.x_transform(x), self.y_transform(y))
+                 for x, y in batch]
+
+        xs, ys = zip(*batch)
+        ret_x, ret_y = self._collate_bag(xs, ys)
+
+        return ret_x, ret_y
+
+
+def get_weights(Y, mode):
+    min_freq    = 2. / Y.shape[0]
+    frequencies = th.from_numpy(np.array(Y.mean(0)).ravel().astype(np.float32))
+    frequencies = th.clamp(frequencies, min_freq, 1.)
+
+    pos_weights = (1. / frequencies)
+    neg_weights = (1. / (1 - frequencies))
+
+    assert mode in {None, 'sqrt', 'sqrt-pos', 'row', 'full'}
+
+    if mode == 'sqrt':
+        pos_weights = th.sqrt(pos_weights)
+        neg_weights = th.sqrt(neg_weights)
+    elif mode == 'sqrt-pos':
+        pos_weights = th.sqrt(pos_weights)
+    elif mode == 'row':
+        summed = pos_weights + neg_weights
+        pos_weights = pos_weights / summed
+        neg_weights = neg_weights / summed
+    elif mode == 'full':
+        total = th.sum(pos_weights) + th.sum(neg_weights)
+        pos_weights = pos_weights / total
+        neg_weights = neg_weights / total
+
+    return pos_weights, neg_weights
+
+
+def to_cuda_var(*x, cuda=False, var=True, volatile=False, requires_grad=False):
+
+    if len(x) == 1:
+        x, = x
+
+    if x is None:
+        return x
+
+    typ = type(x)
+    if typ in {list, tuple}:
+        return typ(to_cuda_var(item, cuda=cuda) for item in x)
+
+    if var:
+        if cuda:
+            # noinspection PyUnresolvedReferences
+            x = x.cuda(async=True)
+
+        x = V(x, requires_grad=requires_grad, volatile=volatile)
+
+    else:
+        if cuda:
+            # noinspection PyUnresolvedReferences
+            x = x.cuda()
+
+    return x
 
 
 def save_csr(obj, filename):
