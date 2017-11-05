@@ -20,12 +20,41 @@ def plot_recall(fig, host, data, limits):
     host.set_ylabel("Recall@10")
     host.set_ylim(0.9 * limits[0], 1.1 * limits[1])
 
-    for i in range(4):
-        x = [float(d[TIME_DS]) * 1000 / N_QUERIES for d in data[i]]
-        y = [d[RECALL_DS] for d in data[i]]
+    # TODO generate JS file for top-100 intersection just like below
+    with open('script.js', 'w') as js_output:
+        for i, alg in enumerate(['ivf', 'kmeans', 'quant', 'alsh']):
+            js_output.write('var data_' + str(i) + ' = {\n x: ')
+            x = [float(d[TIME_DS]) * 1000 / N_QUERIES for d in data[i]]
+            y = [d[RECALL_DS] for d in data[i]]
+            js_output.write(str(x))
+            js_output.write(',\n y: ')
+            js_output.write(str([float(a) for a in y]))
+            if alg == 'ivf':
+                text = ['nprobe=' + str(d[0]) for d in data[i]]
+            elif alg == 'kmeans':
+                text = ['layers=' + str(d[0]) + ' op_tr=' + str(d[4]) +
+                        ' aug_type=' + str(d[1]) + ' U=' + str(d[3])
+                        for d in data[i]]
+            elif alg == 'quant':
+                text = ['subsp=' + str(d[0]) + ' centr=' + str(d[1])
+                        for d in data[i]]
+            elif alg == 'alsh':
+                text = ['tabl=' + str(d[0]) + ' fun=' + str(d[1]) +
+                        ' aug_type=' + str(d[3]) + ' U=' + str(d[4]) +
+                        ' r=' + str(d[2])
+                        for d in data[i]]
+            js_output.write(',\n text: ')
+            js_output.write(str(text))
+            js_output.write(',\n mode: \'markers\',\n')
+            js_output.write('name :\'' + str(alg) + '\' };\n')
 
-        host.plot(x, y, markers[i], label=labels[i],
-                  markersize=MARKER_SIZE, mfc='none', markeredgewidth=WIDTH)
+            host.plot(x, y, markers[i], label=labels[i],
+                      markersize=MARKER_SIZE, mfc='none', markeredgewidth=WIDTH)
+
+        js_output.write('\nvar data = [data_0, data_1, data_2, data_3];\n\n')
+        js_output.write('var layout = { title:\'Recall vs. time\', yaxis: { title: \'Recall@10\' }, ')
+        js_output.write('xaxis: { type: \'log\', autorange: true, title: \'Time [ms]\' }, height : 1000 };\n\n')
+        js_output.write('Plotly.newPlot(\'myDiv\', data, layout);')
 
     host.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
     fig.savefig('plot_recall.pdf')
