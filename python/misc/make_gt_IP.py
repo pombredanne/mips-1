@@ -4,20 +4,12 @@ import os
 import time
 
 import numpy as np
-
 import faiss
 
+from .utils import load_sift, save_sift
+
+
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-
-def load_sift(fname, dtype=np.float32):
-    data = np.fromfile(fname, dtype=dtype)
-    d = data[0].view(np.int32)
-
-    data = data.reshape(-1, d + 1)[:, 1:]
-    data = np.ascontiguousarray(data.copy())
-
-    return data
 
 
 def load(path):
@@ -67,12 +59,7 @@ def generate_gtIP(data, path, skip_tests=False):
     indexIP.add(xb)
 
     _, I = indexIP.search(xq, k)
-    gtIP = np.hstack([
-        np.ones((I.shape[0], 1)) * k,
-        I
-    ]).astype(np.int32)
-
-    gtIP.tofile(os.path.join(path, GT_IP_FNAME))
+    save_sift(I, os.path.join(path, GT_IP_FNAME), dtype=np.int32)
 
     # sanity-check
     if not skip_tests:
