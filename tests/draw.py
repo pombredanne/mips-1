@@ -1,10 +1,8 @@
-import sys
+import argparse
 import csv
+
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import host_subplot
-import mpl_toolkits.axisartist as AA
-import argparse
-
 
 MARKER_SIZE = 3.5
 WIDTH     = 0.5
