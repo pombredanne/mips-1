@@ -7,6 +7,7 @@ makefile.inc
 CMakeLists.txt
 python/*.so
 output.txt
+*.pdf
 
 # Created by .ignore support plugin (hsz.mobi)
 ### JetBrains template
