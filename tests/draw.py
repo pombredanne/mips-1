@@ -10,25 +10,31 @@ TIME_DS   = 8
 RECALL_DS = 6  # recall at 10
 INTER_DS  = 9  # intersection
 N_QUERIES = 100
+ALGORITHM_LIST = ['ivf', 'kmeans', 'quant', 'alsh']
 
+def create_plot(plot_label, plot_type, fig, host, data, limits):
+    labels = [plot_label + ' - ' + str(x) for x in ALGORITHM_LIST]
+    if plot_type == 'recall':
+        markers = ['ro', 'yo', 'bo', 'go']
+        DS = RECALL_DS
+    elif plot_type == 'inter':
+        markers = ['rs', 'ys', 'bs', 'gs']
+        DS = INTER_DS
 
-def plot_recall(fig, host, data, limits):
-    labels = ['Recall@10 - ivf', 'Recall@10 - kmeans', 'Recall@10 - quant', 'Recall@10 - alsh']
-    markers = ['ro', 'yo', 'bo', 'go']
-
-    plt.suptitle('Recall vs. time')
-    host.set_ylabel("Recall@10")
+    plt.suptitle(str(plot_label) + ' vs. time')
+    host.set_ylabel(str(plot_label))
     host.set_ylim(0.9 * limits[0], 1.1 * limits[1])
 
-    # TODO generate JS file for top-100 intersection just like below
-    with open('script.js', 'w') as js_output:
-        for i, alg in enumerate(['ivf', 'kmeans', 'quant', 'alsh']):
-            js_output.write('var data_' + str(i) + ' = {\n x: ')
+    with open(str(plot_type) + '_plot.html', 'w') as html:
+        html.write('<!DOCTYPE html><html><head>\n')
+        html.write('<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>')
+        html.write('</head><body><div id="myDiv"></div><script>')
+
+        for i, alg in enumerate(ALGORITHM_LIST):
+            html.write('var data' + str(i) + ' = {\n x: ')
             x = [float(d[TIME_DS]) * 1000 / N_QUERIES for d in data[i]]
-            y = [d[RECALL_DS] for d in data[i]]
-            js_output.write(str(x))
-            js_output.write(',\n y: ')
-            js_output.write(str([float(a) for a in y]))
+            y = [d[DS] for d in data[i]]
+            html.write(str(x) + ',\n y: ' + str([float(a) for a in y]))
             if alg == 'ivf':
                 text = ['nprobe=' + str(d[0]) for d in data[i]]
             elif alg == 'kmeans':
@@ -41,44 +47,20 @@ def plot_recall(fig, host, data, limits):
             elif alg == 'alsh':
                 text = ['tabl=' + str(d[0]) + ' fun=' + str(d[1]) +
                         ' aug_type=' + str(d[3]) + ' U=' + str(d[4]) +
-                        ' r=' + str(d[2])
-                        for d in data[i]]
-            js_output.write(',\n text: ')
-            js_output.write(str(text))
-            js_output.write(',\n mode: \'markers\',\n')
-            js_output.write('name :\'' + str(alg) + '\' };\n')
+                        ' r=' + str(d[2]) for d in data[i]]
+            html.write(',\n text: ' + str(text) + ',\n mode: \'markers\',\n')
+            html.write('name :\'' + str(alg) + '\' };\n')
 
             host.plot(x, y, markers[i], label=labels[i],
                       markersize=MARKER_SIZE, mfc='none', markeredgewidth=WIDTH)
 
-        js_output.write('\nvar data = [data_0, data_1, data_2, data_3];\n\n')
-        js_output.write('var layout = { title:\'Recall vs. time\', yaxis: { title: \'Recall@10\' }, ')
-        js_output.write('xaxis: { type: \'log\', autorange: true, title: \'Time [ms]\' }, height : 1000 };\n\n')
-        js_output.write('Plotly.newPlot(\'myDiv\', data, layout);')
+        html.write('\nvar data = [data0, data1, data2, data3];\n\nvar layout = { title:\'')
+        html.write(str(plot_label) + ' vs. time\', yaxis: { title: \'' + str(plot_label))
+        html.write('\' }, xaxis: { type: \'log\', autorange: true, title: \'Time per query [ms]\' }, height : 1000 };\n\n')
+        html.write('Plotly.newPlot(\'myDiv\', data, layout);\n</script></body></html>')
 
     host.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
-    fig.savefig('plot_recall.pdf')
-
-
-def plot_intersect(fig, host, data, limits):
-    labels = ['Top-100 intersection - ivf', 'Top-100 intersection - kmeans',
-              'Top-100 intersection - quant', 'Top-100 intersection - alsh']
-    markers = ['rs', 'ys', 'bs', 'gs']
-
-    plt.suptitle('Top-100 intersection vs. time')
-    host.set_ylabel("Top-100 intersection")
-    host.set_ylim(0.9 * limits[0], 1.1 * limits[1])
-
-    for i in range(4):
-        x = [float(d[TIME_DS]) * 1000 / N_QUERIES for d in data[i]]
-        y = [d[INTER_DS] for d in data[i]]
-
-        host.plot(x, y, markers[i], label=labels[i],
-                  markersize=MARKER_SIZE, mfc='none', markeredgewidth=WIDTH)
-
-    host.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
-    fig.savefig('plot_intersection.pdf')
-
+    fig.savefig(str(plot_type) + '_plot.pdf')
 
 def main(args):
 
@@ -94,8 +76,8 @@ def main(args):
     maximum_inter  = max([float(d[INTER_DS + 1]) for d in inlist])
 
     data = []
-    for met in ['ivf', 'kmeans', 'quant', 'alsh']:
-        data.append([x[1:] for x in inlist if x[0] == met])
+    for algorithm in ALGORITHM_LIST:
+        data.append([x[1:] for x in inlist if x[0] == algorithm])
 
     # prepare the plot
     fig = plt.figure()
@@ -104,16 +86,14 @@ def main(args):
     host.set_position([box.x0, box.y0 + box.height*0.35, box.width, box.height * 0.7])
     host.set_xscale('log')
     host.set_xlabel("Time per query [ms]")
-
-    # set limits on axes
     host.set_xlim(0.9 * 1000 * minimum_time / N_QUERIES,
                   1.1 * 1000 * maximum_time / N_QUERIES)
 
     if args.mode == 'recall':
-        plot_recall(fig=fig, host=host, data=data, limits=(minimum_recall, maximum_recall))
+        create_plot('Recall@10', 'recall', fig=fig, host=host, data=data, limits=(minimum_recall, maximum_recall))
 
     if args.mode == 'inter':
-        plot_intersect(fig=fig, host=host, data=data, limits=(minimum_inter, maximum_inter))
+        create_plot('Top-100 intersection', 'inter', fig=fig, host=host, data=data, limits=(minimum_inter, maximum_inter))
 
 
 if __name__ == '__main__':
