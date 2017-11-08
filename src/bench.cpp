@@ -39,7 +39,8 @@ faiss::Index* bench_train(faiss::Index* get_trained_index(const FloatMatrix& xt)
 
     printf ("[%.3f s] Loading train set\n", elapsed() - t0);
 
-    FloatMatrix xt = load_vecs<float>(filenames[0]);
+    // Note: training on full vector set.
+    FloatMatrix xt = load_vecs<float>(filenames[1]);
     d = xt.vector_length;
 
     printf ("[%.3f s] Preparing index d=%zu and training on %zu vectors\n",
