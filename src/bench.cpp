@@ -15,14 +15,15 @@ double elapsed () {
     return  tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-#if 0
+#if 1
 std::string filenames[4] = {
     "data/sift1M/sift_learn.fvecs",
     "data/sift1M/sift_base.fvecs",
     "data/sift1M/sift_query.fvecs",
     "data/sift1M/sift_groundtruth_IP.ivecs",
 };
-#else
+#endif
+#if 0
 std::string filenames[4] = {
      "data/siftsmall/sift_learn.fvecs",
      "data/siftsmall/sift_base.fvecs",
@@ -71,7 +72,7 @@ void bench_add(faiss::Index* index) {
     double begin_add = elapsed();
     index->add(nb, xb.data.data());
     double add_time = elapsed() - begin_add;
-    printf("Add time = %.3f\n", add_time);
+    printf("Add time = %.6f\n", add_time);
 }
 
 void bench_query(faiss::Index* index) {

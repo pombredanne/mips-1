@@ -6,7 +6,7 @@ import time
 import numpy as np
 import faiss
 
-from .utils import load_sift, save_sift
+from utils import load_sift, save_sift
 
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
