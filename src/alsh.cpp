@@ -137,7 +137,7 @@ void IndexALSH::search(
            float* distances, idx_t* labels) const {
 
     FloatMatrix queries = augmentation->extend_queries(data, n);
-
+    #pragma omp parallel for
     for (size_t q = 0; q < queries.vector_count(); q++) {
         vector<idx_t> ans = answer_query(queries.row(q), k);
         for (idx_t j = 0; j < k; j++) {

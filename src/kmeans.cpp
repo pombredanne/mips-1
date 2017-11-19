@@ -138,6 +138,7 @@ void IndexHierarchicKmeans::search(idx_t n, const float* data, idx_t k,
 
     FlatMatrix<idx_t> labels_matrix;
     labels_matrix.resize(n, k);
+    #pragma omp parallel for
     for (size_t i = 0; i < queries.vector_count(); i++) {
         vector<size_t> predictions = predict(layers, queries, i, opened_trees, vectors, k);
         for (idx_t j = 0; j < k; j++) {

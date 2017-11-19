@@ -167,6 +167,7 @@ void IndexSubspaceQuantization::search(idx_t n, const float* data, idx_t k,
     }
 
     vector<FloatMatrix> query_parts = make_parts(queries, subspace_count);
+    #pragma omp parallel for
     for (size_t q = 0; q < queries.vector_count(); q++) {
         vector<size_t> ans = answer_query(kmeans, query_parts, q, k);
         for (size_t i = 0; i < size_t(k); i++) {
